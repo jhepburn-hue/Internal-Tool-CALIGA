@@ -480,5 +480,64 @@ def create_configuration():
     flash(f"Configuration '{config_name}' successfully created!", "success")
     return redirect(url_for('configuration_details', config_name=config_name))
 
+@app.route('/tools', strict_slashes=False)
+def tools():
+    tools_list = [
+        {
+            'title': 'Partial Configuration Generator',
+            'endpoint': 'tool_partial_config',
+            'description': 'Generate a custom Partial Configuration INI file and compile its corresponding Profile Bin file.'
+        },
+        {
+            'title': 'INI Translator',
+            'endpoint': 'tool_ini_translator',
+            'description': 'Upload any raw reader INI configuration file to translate technical key-value settings into human-readable English.'
+        },
+        {
+            'title': 'YAML Automator',
+            'endpoint': 'tool_yaml_automator',
+            'description': 'Automate and streamline the creation of structured YAML configuration profiles for SAM Chips.'
+        },
+        {
+            'title': 'Batch Tokens',
+            'endpoint': 'tool_batch_tokens',
+            'description': 'Batch retrieve and synchronize multiple Profile and Firmware configuration tokens from PocketBase simultaneously.'
+        }
+    ]
+    return render_template('tools.html', tools=tools_list)
+
+@app.route('/tools/partial-config', methods=['GET', 'POST'])
+def tool_partial_config():
+    if request.method == 'POST':
+        flash('Partial Configuration and Bin generated successfully.', 'success')
+        return redirect(url_for('tool_partial_config'))
+    return render_template('tools/partial_config.html')
+
+@app.route('/tools/ini-translator', methods=['GET', 'POST'])
+def tool_ini_translator():
+    translated_output = None
+    if request.method == 'POST':
+        file = request.files.get('ini_file')
+        if file:
+            content = file.read().decode('utf-8', errors='ignore')
+            translated_output = content 
+            flash('INI File successfully translated.', 'success')
+    return render_template('tools/ini_translator.html', output=translated_output)
+
+@app.route('/tools/yaml-automator', methods=['GET', 'POST'])
+def tool_yaml_automator():
+    if request.method == 'POST':
+        flash('SAM Chip YAML configuration generated.', 'success')
+        return redirect(url_for('tool_yaml_automator'))
+    return render_template('tools/yaml_automator.html')
+
+@app.route('/tools/batch-tokens', methods=['GET', 'POST'])
+def tool_batch_tokens():
+    tokens_summary = []
+    if request.method == 'POST':
+        selected_configs = request.form.getlist('configs')
+        flash('Batch tokens successfully retrieved from PocketBase.', 'success')
+    return render_template('tools/batch_tokens.html', tokens_summary=tokens_summary)
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

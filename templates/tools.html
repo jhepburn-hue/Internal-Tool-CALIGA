@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card p-4 mb-4">
+    <div class="mb-4">
+        <h2 class="fw-bold text-light mb-1">Tools</h2>
+    </div>
+
+    <div class="row g-4">
+        {% for tool in tools %}
+        <div class="col-md-6">
+            <div class="card bg-dark-subtle-custom p-4 h-100 border-0 d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="fw-bold text-light mb-2">{{ tool.title }}</h5>
+                    <p class="text-secondary small mb-4">{{ tool.description }}</p>
+                </div>
+                <div>
+                    <a href="{{ url_for(tool.endpoint) }}" class="btn btn-sm btn-outline-info w-100 fw-bold">Launch Tool &rarr;</a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card p-4 mb-4">
+    <a href="{{ url_for('tools') }}" class="btn btn-sm btn-outline-secondary mb-3 align-self-start">&larr; Back to Tools</a>
+    <h3 class="fw-bold text-light mb-3">Partial Configuration Generator</h3>
+    <form method="POST">
+        <p class="text-secondary">Select specific parameter overrides to build a partial INI & Profile BIN file.</p>
+        <button type="submit" class="btn btn-success">Generate Partial Bin</button>
+    </form>
+</div>
+{% endblock %}
