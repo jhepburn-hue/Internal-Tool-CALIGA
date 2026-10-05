@@ -1,7 +1,9 @@
 import os
-from flask import Flask, render_template, session, request, redirect, url_for
+from flask import Flask, render_template, session, request, redirect, url_for, send_file
 from models import db, User, Configuration, RevisionHistory
 from dotenv import load_dotenv
+from services.slack_service import send_alert_qa_notification
+from services.gcs_service import download_ini_file, download_profile_bin, download_firmware_bin
 
 load_dotenv()
 
@@ -115,6 +117,54 @@ def toggle_status(config_name, new_status):
     db.session.commit()
 
     return redirect(url_for('configuration_details', config_name=config_name))
+
+@app.route('/configurations/<config_name>/alert-qa')
+def alert_qa(config_name):
+    config = Configuration.query.filter_by(config_name=config_name).first_or_404()
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "system@wavelynx.com"
+
+    send_alert_qa_notification(config.config_name, config.status, user_email)
+
+    db.session.commit()
+
+    return redirect(url_for('configuration_details', config_name=config_name))
+
+@app.route('/configurations/<config_name>/download-ini')
+def download_ini(config_name):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+    fw_version = "v5.4.10"  # Default active firmware version
+
+    file_path = download_ini_file(config_name, fw_version, user_email)
+    if file_path and os.path.exists(file_path):
+        return send_file(file_path, as_attachment=True)
+    
+    return f"Unable to locate INI file for {config_name} in Input or Forge bucket paths.", 404
+
+@app.route('/configurations/<config_name>/download-profile-bin')
+def download_profile(config_name):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+    fw_version = "v5.4.10"
+
+    file_path = download_profile_bin(config_name, fw_version, user_email)
+    if file_path and os.path.exists(file_path):
+        return send_file(file_path, as_attachment=True)
+
+    return f"Unable to locate Profile BIN for {config_name} in Input or Forge bucket paths.", 404
+
+@app.route('/configurations/<config_name>/download-firmware-bin')
+def download_firmware(config_name):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+    fw_version = "v5.4.10"
+
+    file_path = download_firmware_bin(fw_version, user_email)
+    if file_path and os.path.exists(file_path):
+        return send_file(file_path, as_attachment=True)
+
+    return f"Unable to locate Firmware BIN for {fw_version} in Input or Forge bucket paths.", 404
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

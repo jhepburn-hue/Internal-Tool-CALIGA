@@ -18,9 +18,10 @@
         </div>
 
         <div class="d-flex gap-2">
-            <button class="btn btn-outline-warning" {% if config.status == 'Archived' %}disabled{% endif %}>
+            <a href="{{ url_for('alert_qa', config_name=config.config_name) }}" 
+            class="btn btn-outline-warning {% if config.status == 'Archived' %}disabled{% endif %}">
                 Alert QA
-            </button>
+            </a>
 
             {% if current_user and (current_user.role == 'Sales') %}
                 {% if config.status == 'POC' %}
@@ -44,9 +45,9 @@
             <p class="text-secondary mb-0">Action tools are disabled for Archived configurations.</p>
         {% else %}
             <div class="d-flex flex-wrap gap-2">
-                <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Download INI</button>
-                <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Profile Bin</button>
-                <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Firmware Bin</button>
+                <a href="{{ url_for('download_ini', config_name=config.config_name) }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download INI</a>
+                <a href="{{ url_for('download_profile', config_name=config.config_name) }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Profile Bin</a>
+                <a href="{{ url_for('download_firmware', config_name=config.config_name) }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Firmware Bin</a>
                 <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Flash Configuration</button>
                 <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Get Tokens</button>
             </div>
