@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from services.slack_service import send_alert_qa_notification
 from services.gcs_service import get_or_create_ini_file, get_or_build_profile_bin, get_or_build_firmware_bin
 from services.osdp_service import flash_firmware_osdp, find_rs485_port
+from services.pocketbase_service import process_get_tokens
 
 load_dotenv()
 
@@ -274,6 +275,23 @@ def flash_configuration(config_name):
         flash(f"OSDP Flash Failed: {message}", "error")
 
     return redirect(url_for('configuration_details', config_name=config_name))
+
+@app.route('/configurations/<config_name>/get-tokens', endpoint='get_tokens')
+def get_tokens(config_name):
+    config = Configuration.query.filter_by(config_name=config_name).first_or_404()
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+    fw_version = request.args.get('fw_version', 'v5.4.10').strip()
+
+    tokens_result = process_get_tokens(config, fw_version, user_email)
+
+    return jsonify({
+        "success": True,
+        "profile_name": tokens_result["profile_name"],
+        "profile_token": tokens_result["profile_token"],
+        "firmware_name": tokens_result["firmware_name"],
+        "firmware_token": tokens_result["firmware_token"]
+    })
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

@@ -76,7 +76,11 @@
                     class="btn btn-sm btn-outline-secondary text-light border-secondary">
                         Flash Configuration
                     </a>
-                    <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Get Tokens</button>
+                    <a id="btn-get-tokens" 
+                    href="#" 
+                    class="btn btn-sm btn-outline-secondary text-light border-secondary">
+                        Get Tokens
+                    </a>
                 </div>
             {% endif %}
         </div>
@@ -207,6 +211,44 @@
     </div>
 </div>
 
+<div class="modal fade" id="tokensModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title fw-bold">PocketBase Config Tokens</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div id="tokens-loading" class="text-center py-3">
+                    <div class="spinner-border text-warning mb-2" role="status"></div>
+                    <p class="text-secondary mb-0">Building binaries & syncing with PocketBase...</p>
+                </div>
+
+                <div id="tokens-content" class="d-none">
+                    <div class="card bg-dark-subtle-custom border-secondary p-3 mb-3">
+                        <div class="small text-secondary fw-bold mb-1" id="profile-token-name">5.4.10 CWL1 PROFILE</div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <code class="fs-5 text-warning fw-bold" id="profile-token-val">c-XXXXXXXX</code>
+                            <button class="btn btn-sm btn-outline-light" onclick="navigator.clipboard.writeText(document.getElementById('profile-token-val').innerText);">Copy</button>
+                        </div>
+                    </div>
+
+                    <div class="card bg-dark-subtle-custom border-secondary p-3">
+                        <div class="small text-secondary fw-bold mb-1" id="firmware-token-name">5.4.10 CWL1 FIRMWARE</div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <code class="fs-5 text-warning fw-bold" id="firmware-token-val">c-XXXXXXXX</code>
+                            <button class="btn btn-sm btn-outline-light" onclick="navigator.clipboard.writeText(document.getElementById('firmware-token-val').innerText);">Copy</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const fwSelect = document.getElementById('fw_version_select');
@@ -303,6 +345,45 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
                 .catch(err => {
                     alert("Error checking RS-485 port connection.");
+                });
+        });
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    const tokensBtn = document.getElementById('btn-get-tokens');
+    const fwSelect = document.getElementById('fw_version_select');
+
+    if (tokensBtn) {
+        tokensBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const selectedFw = fwSelect ? fwSelect.value : 'v5.4.10';
+
+            const modal = new bootstrap.Modal(document.getElementById('tokensModal'));
+            const loading = document.getElementById('tokens-loading');
+            const content = document.getElementById('tokens-content');
+
+            loading.classList.remove('d-none');
+            content.classList.add('d-none');
+            modal.show();
+
+            const url = "{{ url_for('get_tokens', config_name=config.config_name) }}?fw_version=" + selectedFw;
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    loading.classList.add('d-none');
+                    content.classList.remove('d-none');
+
+                    document.getElementById('profile-token-name').innerText = data.profile_name;
+                    document.getElementById('profile-token-val').innerText = data.profile_token;
+
+                    document.getElementById('firmware-token-name').innerText = data.firmware_name;
+                    document.getElementById('firmware-token-val').innerText = data.firmware_token;
+                })
+                .catch(err => {
+                    loading.classList.add('d-none');
+                    alert("Error retrieving or syncing tokens with PocketBase.");
                 });
         });
     }
