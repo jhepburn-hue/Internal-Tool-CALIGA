@@ -7,26 +7,30 @@
         <div>
             <a href="{{ url_for('configurations_list') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Configurations</a>
             
-            <div class="d-flex align-items-center gap-3">
-                <h2 class="fw-bold mb-0 text-light">{{ config.config_name }}</h2>
-                
-                <span class="fs-6 badge 
-                    {% if config.status == 'Production' %}status-production
-                    {% elif config.status == 'Active' %}status-active
-                    {% elif config.status == 'POC' %}status-poc
-                    {% else %}status-archived{% endif %}">
-                    Status: {{ config.status }}
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-{{ 'success' if config.status == 'Production' else 'primary' if config.status == 'Active' else 'warning' if config.status == 'POC' else 'secondary' }} fs-6">
+                    {{ config.status }}
                 </span>
 
-                {% if current_user and current_user.role in ['Sales'] and config.status in ['POC', 'Active'] %}
-                    {% if config.status == 'POC' %}
-                        <a href="{{ url_for('toggle_status', config_name=config.config_name, new_status='Active') }}" class="btn btn-sm btn-outline-info">
-                            Switch to Active
-                        </a>
-                    {% elif config.status == 'Active' %}
-                        <a href="{{ url_for('toggle_status', config_name=config.config_name, new_status='POC') }}" class="btn btn-sm btn-outline-info">
-                            Switch to POC
-                        </a>
+                {% if current_user.role in ['Sales', 'SET'] %}
+                    {% if config.status in ['POC', 'Active'] %}
+                        <form action="{{ url_for('toggle_config_status', config_id=config.id) }}" method="POST" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-light fw-bold">
+                                Move to {{ 'Active' if config.status == 'POC' else 'POC' }}
+                            </button>
+                        </form>
+                        </form>
+                    {% endif %}
+
+                    {% if config.status != 'Archived' %}
+                        <form action="{{ url_for('archive_configuration', config_name=config.config_name) }}" 
+                            method="POST" 
+                            class="d-inline"
+                            onsubmit="return confirm('Are you sure you want to archive {{ config.config_name }}? Tools and editing will be disabled.');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger fw-bold ms-1">
+                                Archive Configuration
+                            </button>
+                        </form>
                     {% endif %}
                 {% endif %}
             </div>

@@ -21,6 +21,10 @@ load_dotenv()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'caliga-dev-secret-key')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    "pool_pre_ping": True,  
+    "pool_recycle": 300     
+}
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
@@ -1172,6 +1176,36 @@ def unclaim_failure(group_id):
         flash("You can only unclaim failures that you currently own.", "warning")
 
     return redirect(url_for('failures_dashboard'))
+
+@app.route('/configurations/archive/<config_name>', methods=['POST'])
+def archive_configuration(config_name):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "sales@wavelynx.com"
+    user_role = current_user.role if current_user else "Sales"
+
+    if user_role not in ['Sales', 'SET']:
+        flash("You do not have permission to archive configurations.", "danger")
+        return redirect(url_for('configuration_details', config_name=config_name))
+
+    config_obj = Configuration.query.filter_by(config_name=config_name).first_or_404()
+
+    if config_obj.status == 'Archived':
+        flash(f"Configuration '{config_name}' is already archived.", "info")
+        return redirect(url_for('configuration_details', config_name=config_name))
+
+    config_obj.previous_status = config_obj.status
+    config_obj.status = 'Archived'
+
+    rev = RevisionHistory(
+        config_name=config_name,
+        user_email=user_email,
+        revision_details=f"Configuration status changed from '{config_obj.previous_status}' to 'Archived'."
+    )
+    db.session.add(rev)
+    db.session.commit()
+
+    flash(f"Configuration '{config_name}' archived successfully.", "success")
+    return redirect(url_for('configuration_details', config_name=config_name))
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
