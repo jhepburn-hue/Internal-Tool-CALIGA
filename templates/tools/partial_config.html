@@ -1,11 +1,202 @@
 {% extends 'base.html' %}
+
 {% block content %}
 <div class="card p-4 mb-4">
-    <a href="{{ url_for('tools') }}" class="btn btn-sm btn-outline-secondary mb-3 align-self-start">&larr; Back to Tools</a>
-    <h3 class="fw-bold text-light mb-3">Partial Configuration Generator</h3>
-    <form method="POST">
-        <p class="text-secondary">Select specific parameter overrides to build a partial INI & Profile BIN file.</p>
-        <button type="submit" class="btn btn-success">Generate Partial Bin</button>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <a href="{{ url_for('tools') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Tools</a>
+            <h2 class="fw-bold text-light mb-0">Partial Configuration Generator</h2>
+        </div>
+    </div>
+
+    <hr class="border-secondary mb-4">
+
+    <form method="POST" action="{{ url_for('tool_partial_config') }}">
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <label for="fw_version" class="form-label text-secondary fw-bold">Target Firmware Version</label>
+                <select name="fw_version" id="fw_version" class="form-select bg-dark text-light border-secondary">
+                    <option value="v5.4.10" selected>v5.4.10</option>
+                    <option value="v5.4.11">v5.4.11</option>
+                </select>
+            </div>
+
+            <div class="col-md-4 d-flex align-items-end">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="build_bin_choice" value="true" id="chk_build_bin" checked>
+                    <label class="form-check-label text-light fw-bold small" for="chk_build_bin">Compile Profile BIN via Forge</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-dark-subtle-custom p-3 border-0 mb-4">
+            <h6 class="fw-bold role-header-navy mb-3">System Parameter Overrides</h6>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small fw-bold">Anti-Passback</label>
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary" name="anti_passback">
+                        <option value="" selected>&mdash; no change &mdash;</option>
+                        <option value="enable">Enable</option>
+                        <option value="disable">Disable</option>
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small fw-bold">BLE Credentials</label>
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary" name="ble_credentials">
+                        <option value="" selected>&mdash; no change &mdash;</option>
+                        <option value="enable">Enable</option>
+                        <option value="disable">Disable</option>
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small fw-bold">BLE Subsystem</label>
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary" name="ble">
+                        <option value="" selected>&mdash; no change &mdash;</option>
+                        <option value="enable">Enable</option>
+                        <option value="disable">Disable</option>
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small fw-bold">Audio Buzzer</label>
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary" name="buzzer">
+                        <option value="" selected>&mdash; no change &mdash;</option>
+                        <option value="enable">Enable</option>
+                        <option value="disable">Disable</option>
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small fw-bold">Idle LED Color</label>
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary" name="idle_led">
+                        <option value="" selected>&mdash; no change &mdash;</option>
+                        <option value="off">Off</option>
+                        <option value="red">Red</option>
+                        <option value="green">Green</option>
+                        <option value="blue">Blue</option>
+                        <option value="amber">Amber</option>
+                        <option value="magenta">Magenta</option>
+                        <option value="white">White</option>
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small fw-bold">Keypad Bit Format</label>
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary" name="keypad_bit">
+                        <option value="" selected>&mdash; no change &mdash;</option>
+                        <option value="4">4-bit</option>
+                        <option value="8">8-bit</option>
+                        <option value="26">26-bit</option>
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small fw-bold">OSDP Address</label>
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary" name="osdp_address">
+                        <option value="" selected>&mdash; no change &mdash;</option>
+                        {% for addr in range(0, 9) %}
+                            <option value="{{ addr }}">{{ addr }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small fw-bold">OSDP Baud Rate</label>
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary" name="osdp_baud_rate">
+                        <option value="" selected>&mdash; no change &mdash;</option>
+                        <option value="9600">9600</option>
+                        <option value="57600">57600</option>
+                        <option value="115200">115200</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-dark-subtle-custom p-3 border-0 mb-4">
+            <h6 class="fw-bold role-header-navy mb-2">CSN Protocol Overrides</h6>
+            <p class="text-secondary small mb-3">Optional per-technology overrides. Leave on <em>&mdash; no change &mdash;</em> to omit.</p>
+
+            <div class="table-responsive">
+                <table class="table table-dark table-sm align-middle mb-0">
+                    <thead>
+                        <tr class="text-secondary border-bottom border-secondary">
+                            <th>Card Type</th>
+                            <th style="width: 250px;">Mode</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>MFC CSN</td>
+                            <td>
+                                <select class="form-select form-select-sm bg-dark text-light border-secondary" name="csn_mfc">
+                                    <option value="" selected>&mdash; no change &mdash;</option>
+                                    <option value="off">Off</option>
+                                    <option value="on">On (no override)</option>
+                                    <option value="on_32">On &ndash; 32 bit MSB</option>
+                                    <option value="on_56">On &ndash; 56 bit MSB</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>EV1/EV2 CSN</td>
+                            <td>
+                                <select class="form-select form-select-sm bg-dark text-light border-secondary" name="csn_ev1ev2">
+                                    <option value="" selected>&mdash; no change &mdash;</option>
+                                    <option value="off">Off</option>
+                                    <option value="on">On (no override)</option>
+                                    <option value="on_32">On &ndash; 32 bit MSB</option>
+                                    <option value="on_56">On &ndash; 56 bit MSB</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>iCLASS CSN</td>
+                            <td>
+                                <select class="form-select form-select-sm bg-dark text-light border-secondary" name="csn_iclass">
+                                    <option value="" selected>&mdash; no change &mdash;</option>
+                                    <option value="off">Off</option>
+                                    <option value="on">On (no override)</option>
+                                    <option value="on_32">On &ndash; 32 bit MSB</option>
+                                    <option value="on_56">On &ndash; 56 bit MSB</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>ISO15693 CSN</td>
+                            <td>
+                                <select class="form-select form-select-sm bg-dark text-light border-secondary" name="csn_iso15693">
+                                    <option value="" selected>&mdash; no change &mdash;</option>
+                                    <option value="off">Off</option>
+                                    <option value="on">On (no override)</option>
+                                    <option value="on_32">On &ndash; 32 bit MSB</option>
+                                    <option value="on_56">On &ndash; 56 bit MSB</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>ISO14443A CSN</td>
+                            <td>
+                                <select class="form-select form-select-sm bg-dark text-light border-secondary" name="csn_iso14443a">
+                                    <option value="" selected>&mdash; no change &mdash;</option>
+                                    <option value="off">Off</option>
+                                    <option value="on">On (no override)</option>
+                                    <option value="on_32">On &ndash; 32 bit MSB</option>
+                                    <option value="on_56">On &ndash; 56 bit MSB</option>
+                                </select>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mt-4">
+            <button type="submit" class="btn btn-success fw-bold px-4">
+                Generate Partial INI & Profile BIN &rarr;
+            </button>
+        </div>
     </form>
 </div>
 {% endblock %}

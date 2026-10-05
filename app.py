@@ -8,10 +8,11 @@ from flask import Flask, render_template, session, request, redirect, url_for, s
 from models import db, User, Configuration, RevisionHistory
 from dotenv import load_dotenv
 from services.slack_service import send_alert_qa_notification
-from services.gcs_service import get_or_create_ini_file, get_or_build_profile_bin, get_or_build_firmware_bin
+from services.gcs_service import get_or_create_ini_file, get_or_build_profile_bin, get_or_build_firmware_bin, upload_partial_ini_to_gcs
 from services.osdp_service import flash_firmware_osdp, find_rs485_port
 from services.pocketbase_service import process_get_tokens
 from services.ini_translator_service import translate_uploaded_ini
+from services.forge_service import generate_partial_ini_content, compile_partial_bin_via_forge
 
 load_dotenv()
 
@@ -564,11 +565,46 @@ def tools():
     ]
     return render_template('tools.html', tools=tools_list)
 
-@app.route('/tools/partial-config', methods=['GET', 'POST'])
+@app.route('/tools/partial-config', methods=['GET', 'POST'], strict_slashes=False)
 def tool_partial_config():
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+
     if request.method == 'POST':
-        flash('Partial Configuration and Bin generated successfully.', 'success')
-        return redirect(url_for('tool_partial_config'))
+        fw_version = request.form.get('fw_version', 'v5.4.10').strip()
+        build_bin = request.form.get('build_bin_choice') == 'true'
+
+        form_data = request.form.to_dict()
+        partial_ini_text = generate_partial_ini_content(form_data)
+
+        if not partial_ini_text:
+            flash("No parameters were changed. Select at least one override.", "warning")
+            return redirect(url_for('tool_partial_config'))
+
+        changed_keys = [k for k, v in form_data.items() if v and k not in ['fw_version', 'build_bin_choice']]
+        name_summary = "_".join(changed_keys[:3]) if changed_keys else "override"
+        partial_name = f"partial_{name_summary}"
+        ini_filename = f"{partial_name}.ini"
+
+        gcs_path = upload_partial_ini_to_gcs(ini_filename, partial_ini_text, fw_version, user_email)
+
+        if not gcs_path:
+            flash("Failed to upload partial INI to Cloud Storage.", "danger")
+            return redirect(url_for('tool_partial_config'))
+
+        if build_bin:
+            forge_triggered = compile_partial_bin_via_forge(partial_name, fw_version, user_email)
+            if forge_triggered:
+                flash(f"Partial INI uploaded & Forge Profile BIN build triggered for '{partial_name}'!", "success")
+            else:
+                flash(f"Partial INI uploaded to GCS, but Forge build trigger failed.", "warning")
+
+        local_ini_path = f"/tmp/{ini_filename}"
+        with open(local_ini_path, "w") as f:
+            f.write(partial_ini_text)
+
+        return send_file(local_ini_path, as_attachment=True, download_name=ini_filename)
+
     return render_template('tools/partial_config.html')
 
 @app.route('/tools/ini-translator', methods=['GET', 'POST'], strict_slashes=False)

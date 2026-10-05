@@ -214,3 +214,27 @@ def get_or_build_firmware_bin(config, fw_version, user_email, output_dir="downlo
 
     print(f"[GCS SERVICE] Timed out waiting for {config.config_name} Firmware BIN from Forge.")
     return None
+
+def upload_partial_ini_to_gcs(ini_filename, ini_content, fw_version, user_email):
+    """
+    Uploads a partial .ini file directly to:
+    forge/{user_email}/{fw_version}/partials/{ini_filename}
+    """
+    client = get_gcs_client()
+    if not client:
+        print("[GCS ERROR] GCS client not available for partial upload.")
+        return None
+
+    clean_ver = fw_version.strip()
+    ver_with_v = clean_ver if clean_ver.startswith('v') else f"v{clean_ver}"
+
+    try:
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        gcs_path = f"forge/{user_email}/{ver_with_v}/partials/{ini_filename}"
+        blob = bucket.blob(gcs_path)
+        blob.upload_from_string(ini_content, content_type="text/plain")
+        print(f"[GCS SUCCESS] Uploaded partial INI to gs://{GCS_BUCKET_NAME}/{gcs_path}")
+        return gcs_path
+    except Exception as e:
+        print(f"[GCS UPLOAD ERROR] Failed to upload partial INI: {e}")
+        return None
