@@ -1,6 +1,7 @@
 import os
 import time
 from sqlalchemy import func
+import concurrent.futures
 from flask import Flask, render_template, session, request, redirect, url_for, send_file, request, Response, stream_with_context, jsonify, flash, json
 from models import db, User, Configuration, RevisionHistory
 from dotenv import load_dotenv
@@ -531,13 +532,59 @@ def tool_yaml_automator():
         return redirect(url_for('tool_yaml_automator'))
     return render_template('tools/yaml_automator.html')
 
-@app.route('/tools/batch-tokens', methods=['GET', 'POST'])
+@app.route('/tools/batch-tokens', methods=['GET', 'POST'], strict_slashes=False)
 def tool_batch_tokens():
-    tokens_summary = []
-    if request.method == 'POST':
-        selected_configs = request.form.getlist('configs')
-        flash('Batch tokens successfully retrieved from PocketBase.', 'success')
-    return render_template('tools/batch_tokens.html', tokens_summary=tokens_summary)
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+
+    configurations = Configuration.query.filter(Configuration.status != 'Archived').order_by(
+        db.cast(db.func.nullif(Configuration.config_id_dec, ''), db.Integer).asc().nulls_last()
+    ).all()
+
+    tokens_results = []
+    selected_fw = request.form.get('fw_version', 'v5.4.10').strip() if request.method == 'POST' else 'v5.4.10'
+    selected_config_names = request.form.getlist('config_names') if request.method == 'POST' else []
+
+    if request.method == 'POST' and selected_config_names:
+        configs_to_process = Configuration.query.filter(Configuration.config_name.in_(selected_config_names)).all()
+
+        def process_single_config(config_obj):
+            try:
+                res = process_get_tokens(config_obj, selected_fw, user_email)
+                return {
+                    "config_name": config_obj.config_name,
+                    "status": config_obj.status,
+                    "profile_name": res.get("profile_name"),
+                    "profile_token": res.get("profile_token"),
+                    "firmware_name": res.get("firmware_name"),
+                    "firmware_token": res.get("firmware_token"),
+                    "success": True,
+                    "error": None
+                }
+            except Exception as e:
+                return {
+                    "config_name": config_obj.config_name,
+                    "status": config_obj.status,
+                    "profile_name": f"{selected_fw.replace('v', '')} {config_obj.config_name} PROFILE",
+                    "profile_token": "Error",
+                    "firmware_name": f"{selected_fw.replace('v', '')} {config_obj.config_name} FIRMWARE",
+                    "firmware_token": "Error",
+                    "success": False,
+                    "error": str(e)
+                }
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            tokens_results = list(executor.map(process_single_config, configs_to_process))
+
+        flash(f"Successfully processed batch tokens for {len(tokens_results)} configurations.", "success")
+
+    return render_template(
+        'tools/batch_tokens.html',
+        configurations=configurations,
+        tokens_results=tokens_results,
+        selected_fw=selected_fw,
+        selected_config_names=selected_config_names
+    )
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

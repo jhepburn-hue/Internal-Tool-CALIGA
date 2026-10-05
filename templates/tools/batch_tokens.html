@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+    .config-tile {
+        cursor: pointer;
+        transition: all 0.2s ease-in-out;
+        user-select: none;
+        border: 1px solid #3c4148 !important;
+    }
+    .config-tile:hover {
+        border-color: #0dcaf0 !important;
+        background-color: #1a202c !important;
+    }
+    .config-tile.selected {
+        border: 2px solid #0dcaf0 !important;
+        background-color: #11253e !important;
+        box-shadow: 0 0 10px rgba(13, 202, 240, 0.25);
+    }
+</style>
+
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <a href="{{ url_for('tools') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Tools</a>
+            <h2 class="fw-bold text-light mb-0">Batch Tokens</h2>
+        </div>
+    </div>
+
+    <hr class="border-secondary mb-4">
+
+    <form method="POST" action="{{ url_for('tool_batch_tokens') }}" id="batch-tokens-form">
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <label for="fw_version" class="form-label text-secondary fw-bold">Target Firmware Version</label>
+                <select name="fw_version" id="fw_version" class="form-select bg-dark text-light border-secondary">
+                    <option value="v5.4.10" {% if selected_fw == 'v5.4.10' %}selected{% endif %}>v5.4.10</option>
+                    <option value="v5.4.11" {% if selected_fw == 'v5.4.11' %}selected{% endif %}>v5.4.11</option>
+                </select>
+            </div>
+
+            <div class="col-md-8 d-flex align-items-end justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm text-light" id="btn-select-all">Select All</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm text-light" id="btn-deselect-all">Deselect All</button>
+                <button type="submit" class="btn btn-success fw-bold px-4" id="btn-submit-batch">
+                    <i class="bi bi-box-arrow-in-down me-1"></i> Retrieve Selected Tokens
+                </button>
+            </div>
+        </div>
+
+        <div class="card bg-dark-subtle-custom p-3 border-0 mb-4">
+            <h6 class="fw-bold text-light mb-3">Select Configurations</h6>
+            <div class="row g-2" style="max-height: 320px; overflow-y: auto;">
+                {% for config in configurations %}
+                <div class="col-md-3 col-sm-6">
+                    <div class="card config-tile bg-dark p-3 text-center h-100 d-flex flex-column justify-content-center align-items-center {% if config.config_name in selected_config_names %}selected{% endif %}"
+                         onclick="toggleConfigTile(this)">
+                        <input class="d-none config-checkbox" 
+                               type="checkbox" 
+                               name="config_names" 
+                               value="{{ config.config_name }}" 
+                               {% if config.config_name in selected_config_names %}checked{% endif %}>
+                        
+                        <div class="fw-bold text-light small text-truncate w-100">
+                            {{ config.config_name }}
+                            <span class="badge bg-secondary ms-1 fs-7">{{ config.status }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">No active configurations available.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </form>
+
+    {% if tokens_results %}
+        <hr class="border-secondary my-4">
+        <h5 class="fw-bold text-light mb-3">Batch Retrieval Results ({{ selected_fw }})</h5>
+
+        <div class="row g-3">
+            {% for item in tokens_results %}
+            <div class="col-md-6">
+                <div class="card bg-dark-subtle-custom border-secondary p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold text-light mb-0">{{ item.config_name }}</h6>
+                        <span class="badge bg-info">{{ item.status }}</span>
+                    </div>
+
+                    {% if item.success %}
+                        <div class="card bg-dark border-secondary p-2 mb-2">
+                            <div class="small text-secondary fw-bold">{{ item.profile_name }}</div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <code class="text-warning fs-6 fw-bold" id="prof_tok_{{ loop.index }}">{{ item.profile_token }}</code>
+                                <button type="button" class="btn btn-sm btn-outline-light py-0 px-2" onclick="navigator.clipboard.writeText(document.getElementById('prof_tok_{{ loop.index }}').innerText);">Copy</button>
+                            </div>
+                        </div>
+
+                        <div class="card bg-dark border-secondary p-2">
+                            <div class="small text-secondary fw-bold">{{ item.firmware_name }}</div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <code class="text-warning fs-6 fw-bold" id="fw_tok_{{ loop.index }}">{{ item.firmware_token }}</code>
+                                <button type="button" class="btn btn-sm btn-outline-light py-0 px-2" onclick="navigator.clipboard.writeText(document.getElementById('fw_tok_{{ loop.index }}').innerText);">Copy</button>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-danger py-2 mb-0 small">
+                            <strong>Sync Error:</strong> {{ item.error }}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>
+
+<script>
+function toggleConfigTile(tile) {
+    const checkbox = tile.querySelector('.config-checkbox');
+    checkbox.checked = !checkbox.checked;
+    
+    if (checkbox.checked) {
+        tile.classList.add('selected');
+    } else {
+        tile.classList.remove('selected');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllBtn = document.getElementById('btn-select-all');
+    const deselectAllBtn = document.getElementById('btn-deselect-all');
+    
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', () => {
+            document.querySelectorAll('.config-tile').forEach(tile => {
+                const checkbox = tile.querySelector('.config-checkbox');
+                checkbox.checked = true;
+                tile.classList.add('selected');
+            });
+        });
+    }
+
+    if (deselectAllBtn) {
+        deselectAllBtn.addEventListener('click', () => {
+            document.querySelectorAll('.config-tile').forEach(tile => {
+                const checkbox = tile.querySelector('.config-checkbox');
+                checkbox.checked = false;
+                tile.classList.remove('selected');
+            });
+        });
+    }
+});
+</script>
+{% endblock %}
