@@ -5,14 +5,15 @@ import datetime
 from sqlalchemy import func
 import concurrent.futures
 from flask import Flask, render_template, session, request, redirect, url_for, send_file, request, Response, stream_with_context, jsonify, flash, json
-from models import db, User, Configuration, RevisionHistory
+from models import db, User, Configuration, RevisionHistory, FWRun, ConfigurationTestGroup, TestCase
 from dotenv import load_dotenv
-from services.slack_service import send_alert_qa_notification
+from services.slack_service import send_alert_qa_notification, send_failure_message
 from services.gcs_service import get_or_create_ini_file, get_or_build_profile_bin, get_or_build_firmware_bin, upload_partial_ini_to_gcs
 from services.osdp_service import flash_firmware_osdp, find_rs485_port
 from services.pocketbase_service import process_get_tokens
 from services.ini_translator_service import translate_uploaded_ini
 from services.forge_service import generate_partial_ini_content, compile_partial_bin_via_forge
+from services.jira_service import create_failure_ticket
 
 load_dotenv()
 
@@ -816,6 +817,193 @@ def tool_batch_tokens():
         selected_fw=selected_fw,
         selected_config_names=selected_config_names
     )
+
+@app.route('/testing', methods=['GET'], strict_slashes=False)
+def testing_dashboard():
+    current_fw = request.args.get('fw_version', 'v5.4.10').strip()
+    
+    runs = FWRun.query.filter_by(fw_version=current_fw).order_by(FWRun.run_date.desc()).all()
+    selectable_configs = Configuration.query.filter(Configuration.status != 'Archived').order_by(Configuration.config_name.asc()).all()
+
+    return render_template(
+        'testing.html',
+        current_fw=current_fw,
+        runs=runs,
+        selectable_configs=selectable_configs
+    )
+
+@app.route('/testing/start-run', methods=['POST'])
+def start_new_run():
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+
+    fw_version = request.form.get('fw_version', 'v5.4.10').strip()
+    selected_config_names = request.form.getlist('config_names')
+
+    if not selected_config_names:
+        flash("Please select at least one configuration to start a firmware run.", "warning")
+        return redirect(url_for('testing_dashboard', fw_version=fw_version))
+
+    new_run = FWRun(fw_version=fw_version)
+    db.session.add(new_run)
+    db.session.flush()
+
+    for config_name in selected_config_names:
+        config_obj = Configuration.query.filter_by(config_name=config_name).first()
+        if not config_obj:
+            continue
+
+        test_group = ConfigurationTestGroup(
+            fw_run_id=new_run.id,
+            config_name=config_name,
+            status='Untested'
+        )
+        db.session.add(test_group)
+        db.session.flush()
+
+        action_categories = [
+            {
+                "category": "ACTION: Verify AV and Output Formats.",
+                "items": [
+                    ("Idle LED", config_obj.idle_led or "Off"),
+                    ("Credential Report LED", config_obj.credential_report_led or "Off"),
+                    ("Beeper", config_obj.beeper or "Off"),
+                    ("Keypad Format", config_obj.keypad_format or "8-bit"),
+                    ("Tamper Monitoring", config_obj.tamper_monitoring or "Off"),
+                    ("Config ID", f"{config_obj.config_id_dec or '0'} ({config_obj.config_id_hex or '0x00'})")
+                ]
+            },
+            {
+                "category": "ACTION: Present the HF credential.",
+                "items": [
+                    ("Leaf Si Application (Kv1)", "Leaf Si" if config_obj.card_type in ["Leaf Si", "Dual"] else "None"),
+                    ("Leaf Cc Application (Kc1)", "Leaf Cc" if config_obj.card_type in ["Leaf Cc", "Dual"] else "None"),
+                    ("Other Custom HF Application", "None")
+                ]
+            },
+            {
+                "category": "ACTION: Verify Card Serial Number (CSN) credentials.",
+                "items": [
+                    ("MFC CSN", config_obj.mfc_csn or "Off"),
+                    ("EV1/EV2 CSN", config_obj.ev1_ev2_csn or "Off"),
+                    ("iClass CSN", config_obj.iclass_csn or "Off"),
+                    ("ISO 15693 CSN", config_obj.iso_15693_csn or "Off"),
+                    ("ISO 14443A", config_obj.iso_14443a_csn or "Off")
+                ]
+            },
+            {
+                "category": "ACTION: Verify Low Frequency (LF) credentials.",
+                "items": [
+                    ("FSK Prox", config_obj.fsk_prox or "Off"),
+                    ("ASK Prox", config_obj.ask_prox or "Off"),
+                    ("Prox Filter", config_obj.prox_filter or "Off"),
+                    ("Prox Filter Description", config_obj.prox_filter_description or "None")
+                ]
+            },
+            {
+                "category": "ACTION: Verify Mobile configurations.",
+                "items": [
+                    ("BLE Advertising Config", "Unique (Differs)"),
+                    ("BLE Functionality", config_obj.ble_functionality or "Admin + Credentials"),
+                    ("NFC Functionality", config_obj.nfc_functionality or "Enabled"),
+                    ("MyPass Keyset", config_obj.mobile_keyset or "Standard"),
+                    ("Legacy Credentials", config_obj.legacy_credentials or "Off"),
+                    ("Wallet", "Off")
+                ]
+            }
+        ]
+
+        for cat in action_categories:
+            cat_header = cat["category"]
+            for label, val_str in cat["items"]:
+                criterion_label = f"{cat_header} | {label}:{val_str}"
+                tc = TestCase(test_group_id=test_group.id, criterion_name=criterion_label, status='Untested')
+                db.session.add(tc)
+
+    db.session.commit()
+    flash(f"Started new FW {fw_version} run with Squash-style test suites.", "success")
+    return redirect(url_for('testing_dashboard', fw_version=fw_version))
+
+@app.route('/testing/assign-group/<int:group_id>', methods=['POST'])
+def assign_test_group(group_id):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+
+    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    action = request.form.get('action', 'assign')
+
+    if action == 'assign':
+        group.assigned_user = user_email
+        flash(f"Assigned test group '{group.config_name}' to {user_email}.", "info")
+    else:
+        group.assigned_user = None
+        flash(f"Unassigned test group '{group.config_name}'.", "info")
+
+    db.session.commit()
+    return redirect(url_for('testing_dashboard', fw_version=group.fw_run.fw_version))
+
+@app.route('/testing/submit-group/<int:group_id>', methods=['POST'])
+def submit_test_group(group_id):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+
+    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    fw_run = group.fw_run
+
+    if not group.assigned_user:
+        flash("Cannot submit test group until a tester is assigned.", "danger")
+        return redirect(url_for('testing_dashboard', fw_version=fw_run.fw_version))
+
+    has_untested = False
+    failed_cases = []
+
+    for tc in group.test_cases:
+        status = request.form.get(f"status_{tc.id}")
+        comment = request.form.get(f"comment_{tc.id}", "").strip()
+
+        if status == "Failed" and not comment:
+            flash(f"Failure comments are required for failing criteria: '{tc.criterion_name}'", "danger")
+            return redirect(url_for('testing_dashboard', fw_version=fw_run.fw_version))
+
+        if status:
+            tc.status = status
+            tc.comment = comment
+
+        if tc.status == 'Untested':
+            has_untested = True
+        elif tc.status == 'Failed':
+            failed_cases.append(tc)
+
+    if has_untested:
+        flash("All criteria must be evaluated (Passed or Failed) before submitting.", "warning")
+        return redirect(url_for('testing_dashboard', fw_version=fw_run.fw_version))
+
+    config_obj = Configuration.query.filter_by(config_name=group.config_name).first()
+
+    if failed_cases:
+        group.status = 'Failed'
+        fw_run.failed_total += 1
+
+        if config_obj and config_obj.status == 'Production':
+            config_obj.status = config_obj.previous_status or 'Active'
+            flash(f"Production config '{config_obj.config_name}' failed testing! Reverted status to {config_obj.status}.", "warning")
+
+        crit_details = ", ".join([f"{c.criterion_name} ({c.comment})" for c in failed_cases])
+        create_failure_ticket(group.config_name, user_email, fw_run.fw_version, crit_details)
+        send_failure_message(group.config_name, user_email, fw_run.fw_version, crit_details)
+        flash(f"Test group '{group.config_name}' marked as FAILED. Jira ticket created and Slack alert sent.", "danger")
+
+    else:
+        group.status = 'Passed'
+        fw_run.passed_total += 1
+
+        if config_obj:
+            config_obj.previous_status = config_obj.status
+            config_obj.status = 'Production'
+            flash(f"Test group '{group.config_name}' PASSED! Configuration promoted to Production.", "success")
+
+    db.session.commit()
+    return redirect(url_for('testing_dashboard', fw_version=fw_run.fw_version))
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

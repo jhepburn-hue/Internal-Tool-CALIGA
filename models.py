@@ -106,35 +106,30 @@ class RevisionHistory(db.Model):
 
 class FWRun(db.Model):
     __tablename__ = 'fw_runs'
-
     id = db.Column(db.Integer, primary_key=True)
-    fw_version = db.Column(db.String(50), nullable=False)
+    fw_version = db.Column(db.String(20), nullable=False) # 'v5.4.10' or 'v5.4.11'
+    run_date = db.Column(db.DateTime, default=datetime.utcnow)
     passed_total = db.Column(db.Integer, default=0)
     failed_total = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    test_groups = db.relationship('ConfigurationTestGroup', backref='fw_run', lazy=True, cascade="all, delete-orphan")
-
+    
+    test_groups = db.relationship('ConfigurationTestGroup', backref='fw_run', cascade="all, delete-orphan")
 
 class ConfigurationTestGroup(db.Model):
     __tablename__ = 'configuration_test_groups'
-
     id = db.Column(db.Integer, primary_key=True)
-    config_name = db.Column(db.String(100), nullable=False)
     fw_run_id = db.Column(db.Integer, db.ForeignKey('fw_runs.id'), nullable=False)
-    status = db.Column(db.String(50), default='Untested')
-    assigned_user = db.Column(db.String(150), nullable=True)
-
-    test_cases = db.relationship('TestCase', backref='test_group', lazy=True, cascade="all, delete-orphan")
-
+    config_name = db.Column(db.String(100), nullable=False)
+    assigned_user = db.Column(db.String(120), nullable=True) # User email or name
+    status = db.Column(db.String(20), default='Untested') # 'Untested', 'In Progress', 'Passed', 'Failed'
+    
+    test_cases = db.relationship('TestCase', backref='test_group', cascade="all, delete-orphan")
 
 class TestCase(db.Model):
     __tablename__ = 'test_cases'
-
     id = db.Column(db.Integer, primary_key=True)
     test_group_id = db.Column(db.Integer, db.ForeignKey('configuration_test_groups.id'), nullable=False)
-    criteria_name = db.Column(db.String(255), nullable=False)
-    status = db.Column(db.String(20), default='Untested')
+    criterion_name = db.Column(db.String(200), nullable=False) # e.g. "Idle LED: Blue"
+    status = db.Column(db.String(20), default='Untested') # 'Untested', 'Passed', 'Failed'
     comment = db.Column(db.Text, nullable=True)
 
 

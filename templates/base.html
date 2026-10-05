@@ -54,7 +54,11 @@
                         <a class="nav-link {% if request.path.startswith('/configurations') %}active{% endif %}" 
                         href="{{ url_for('configurations_list') }}">Configurations</a>
                     </li>
-                    <li class="nav-item"><a class="nav-link" href="#">Testing</a></li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'testing_dashboard' %}active{% endif %}" href="{{ url_for('testing_dashboard') }}">
+                            Testing
+                        </a>
+                    </li>
                     <li class="nav-item"><a class="nav-link" href="#">Failures</a></li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('tools') }}">Tools</a></li>
                 </ul>

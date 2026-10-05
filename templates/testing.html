@@ -1,0 +1,395 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+    .run-config-tile {
+        cursor: pointer;
+        transition: all 0.2s ease-in-out;
+        user-select: none;
+        border: 1px solid #3c4148 !important;
+    }
+    .run-config-tile:hover {
+        border-color: #0dcaf0 !important;
+        background-color: #1a202c !important;
+    }
+    .run-config-tile.selected {
+        border: 2px solid #0dcaf0 !important;
+        background-color: #11253e !important;
+        box-shadow: 0 0 10px rgba(13, 202, 240, 0.25);
+    }
+</style>
+
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2 class="fw-bold text-light mb-0">Firmware Testing Runs</h2>
+            <p class="text-secondary small mb-0">Execute firmware validation test suites, assign test groups, and manage QA approvals.</p>
+        </div>
+
+        {% if current_user and current_user.role in ['SET', 'QA', 'Sales'] %}
+            <button class="btn btn-success fw-bold px-4" data-bs-toggle="modal" data-bs-target="#startRunModal">
+                + Start New Run
+            </button>
+        {% endif %}
+    </div>
+
+    <ul class="nav nav-tabs border-secondary mb-4">
+        <li class="nav-item">
+            <a class="nav-link fw-bold {% if current_fw == 'v5.4.10' %}active bg-dark text-info border-secondary{% else %}text-secondary{% endif %}" 
+               href="{{ url_for('testing_dashboard', fw_version='v5.4.10') }}">FW v5.4.10</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link fw-bold {% if current_fw == 'v5.4.11' %}active bg-dark text-info border-secondary{% else %}text-secondary{% endif %}" 
+               href="{{ url_for('testing_dashboard', fw_version='v5.4.11') }}">FW v5.4.11</a>
+        </li>
+    </ul>
+
+    {% for run in runs %}
+        <div class="card bg-dark-subtle-custom border-secondary p-3 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold text-light mb-0">
+                    FW Run #{{ run.id }} &mdash; <span class="text-secondary fs-6">{{ run.run_date.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+                </h5>
+                <div class="d-flex gap-2">
+                    <span class="badge bg-success px-3 py-2">Passed: {{ run.passed_total }}</span>
+                    <span class="badge bg-danger px-3 py-2">Failed: {{ run.failed_total }}</span>
+                </div>
+            </div>
+
+            <div class="accordion border-secondary" id="accordionRun_{{ run.id }}">
+                {% for group in run.test_groups %}
+                    <div class="accordion-item bg-dark border-secondary text-light mb-2">
+                        <h2 class="accordion-header d-flex align-items-center bg-dark" id="heading_{{ group.id }}">
+                            <button class="accordion-button collapsed bg-dark text-light border-0 flex-grow-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_{{ group.id }}">
+                                <div class="d-flex justify-content-between align-items-center w-100 me-3">
+                                    <span class="fw-bold">{{ group.config_name }}</span>
+                                    <div class="d-flex align-items-center gap-3">
+                                        <span class="small text-secondary">
+                                            Assigned: <strong>{{ group.assigned_user or 'Unassigned' }}</strong>
+                                        </span>
+                                        <span class="badge 
+                                            {% if group.status == 'Passed' %}bg-success
+                                            {% elif group.status == 'Failed' %}bg-danger
+                                            {% else %}bg-warning text-dark{% endif %}">
+                                            {{ group.status }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </button>
+
+                            {% if current_user and current_user.role in ['SET', 'QA'] %}
+                                <div class="pe-3">
+                                    <button type="button" 
+                                            class="btn btn-sm btn-outline-info fw-bold text-nowrap"
+                                            onclick="openFlashModal('{{ group.config_name }}', '{{ run.fw_version }}')">
+                                        Flash Reader
+                                    </button>
+                                </div>
+                            {% endif %}
+                        </h2>
+
+                        <div id="collapse_{{ group.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionRun_{{ run.id }}">
+                            <div class="accordion-body border-top border-secondary">
+                                {% if current_user and current_user.role in ['SET', 'QA'] %}
+                                    <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-dark-subtle-custom rounded">
+                                        <span class="small text-secondary">Tester Assignment:</span>
+                                        <form action="{{ url_for('assign_test_group', group_id=group.id) }}" method="POST" class="d-inline">
+                                            {% if group.assigned_user == current_user.email %}
+                                                <input type="hidden" name="action" value="unassign">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning">Unassign Me</button>
+                                            {% else %}
+                                                <input type="hidden" name="action" value="assign">
+                                                <button type="submit" class="btn btn-sm btn-outline-info">Assign to Me</button>
+                                            {% endif %}
+                                        </form>
+                                    </div>
+
+                                    <form action="{{ url_for('submit_test_group', group_id=group.id) }}" method="POST">
+                                        {% set ns = namespace(current_cat="") %}
+                                        {% for tc in group.test_cases %}
+                                            {% set parts = tc.criterion_name.split(' | ') %}
+                                            {% set cat_name = parts[0] if parts|length > 1 else 'General Verification' %}
+                                            {% set item_parts = (parts[1] if parts|length > 1 else tc.criterion_name).split(':::') %}
+                                            {% set param_label = item_parts[0] %}
+                                            {% set param_target = item_parts[1] if item_parts|length > 1 else '' %}
+
+                                            {% if ns.current_cat != cat_name %}
+                                                {% if not loop.first %}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                {% endif %}
+                                                {% set ns.current_cat = cat_name %}
+                                                <div class="card bg-dark border-secondary mb-3 p-3">
+                                                    <div class="fw-bold text-info small text-uppercase mb-2">
+                                                        {{ cat_name }}
+                                                    </div>
+                                                    <table class="table table-dark table-hover table-sm align-middle mb-0">
+                                                        <thead>
+                                                            <tr class="text-secondary border-bottom border-secondary small">
+                                                                <th style="width: 35%;">Parameter</th>
+                                                                <th style="width: 30%;">Expected Configuration</th>
+                                                                <th style="width: 15%;">Evaluation</th>
+                                                                <th style="width: 20%;">Comment</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                            {% endif %}
+
+                                            <tr>
+                                                <td class="fw-bold text-light small">{{ param_label }}</td>
+                                                <td><code class="text-warning fs-7">{{ param_target }}</code></td>
+                                                <td>
+                                                    <select name="status_{{ tc.id }}" class="form-select form-select-sm bg-dark text-light border-secondary" {% if group.status in ['Passed', 'Failed'] %}disabled{% endif %}>
+                                                        <option value="Untested" {% if tc.status == 'Untested' %}selected{% endif %}>Untested</option>
+                                                        <option value="Passed" {% if tc.status == 'Passed' %}selected{% endif %}>Passed</option>
+                                                        <option value="Failed" {% if tc.status == 'Failed' %}selected{% endif %}>Failed</option>
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    <input type="text" name="comment_{{ tc.id }}" value="{{ tc.comment or '' }}" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Reason if failed..." {% if group.status in ['Passed', 'Failed'] %}readonly{% endif %}>
+                                                </td>
+                                            </tr>
+
+                                            {% if loop.last %}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            {% endif %}
+                                        {% endfor %}
+
+                                        {% if group.status not in ['Passed', 'Failed'] %}
+                                        <div class="text-end mt-3">
+                                            <button type="submit" class="btn btn-sm btn-success px-4 fw-bold">Submit Test Group Evaluation</button>
+                                        </div>
+                                        {% endif %}
+                                    </form>
+
+                                {% else %}
+                                    <div class="p-3 text-center">
+                                        <p class="text-secondary mb-2">Configuration Validation Summary for <strong>{{ group.config_name }}</strong></p>
+                                        <span class="badge fs-6 px-4 py-2 
+                                            {% if group.status == 'Passed' %}bg-success
+                                            {% elif group.status == 'Failed' %}bg-danger
+                                            {% else %}bg-warning text-dark{% endif %}">
+                                            Status: {{ group.status }}
+                                        </span>
+                                        {% if group.assigned_user %}
+                                            <p class="small text-muted mt-2 mb-0">Evaluated by {{ group.assigned_user }}</p>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% else %}
+        <div class="alert alert-secondary text-center py-4">
+            No firmware test runs recorded for <strong>{{ current_fw }}</strong>. Click <strong>+ Start New Run</strong> to initiate testing.
+        </div>
+    {% endfor %}
+</div>
+
+<div class="modal fade" id="startRunModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <form action="{{ url_for('start_new_run') }}" method="POST">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title fw-bold">Start New Firmware Test Run</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-4">
+                        <label for="fw_version" class="form-label text-secondary fw-bold">Firmware Version</label>
+                        <select name="fw_version" id="fw_version" class="form-select bg-dark text-light border-secondary">
+                            <option value="v5.4.10" {% if current_fw == 'v5.4.10' %}selected{% endif %}>v5.4.10</option>
+                            <option value="v5.4.11" {% if current_fw == 'v5.4.11' %}selected{% endif %}>v5.4.11</option>
+                        </select>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label text-secondary fw-bold mb-0">Select Configurations for Testing</label>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-secondary btn-sm text-light py-0 px-2 fs-7" id="btn-modal-select-all">Select All</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm text-light py-0 px-2 fs-7" id="btn-modal-deselect-all">Deselect All</button>
+                        </div>
+                    </div>
+
+                    <div class="row g-2" style="max-height: 280px; overflow-y: auto;">
+                        {% for config in selectable_configs %}
+                        <div class="col-md-4 col-sm-6">
+                            <div class="card run-config-tile bg-dark p-3 text-center h-100 d-flex flex-column justify-content-center align-items-center"
+                                 onclick="toggleRunConfigTile(this)">
+                                <input class="d-none run-config-checkbox" 
+                                       type="checkbox" 
+                                       name="config_names" 
+                                       value="{{ config.config_name }}" 
+                                       id="run_chk_{{ config.id }}">
+                                
+                                <div class="fw-bold text-light small text-truncate w-100">
+                                    {{ config.config_name }}
+                                    <span class="badge bg-secondary ms-1 fs-7">{{ config.status }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">No active configurations available.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-success fw-bold px-4">Initialize Test Run</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="flashReaderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title fw-bold">⚡ Flash Reader via OSDP</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="mb-3">
+                    <label class="form-label text-secondary small fw-bold">Configuration</label>
+                    <input type="text" id="flash_config_name" class="form-control bg-dark text-info border-secondary fw-bold" readonly>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label for="flash_baud_rate" class="form-label text-secondary small fw-bold">Baud Rate</label>
+                        <select id="flash_baud_rate" class="form-select bg-dark text-light border-secondary">
+                            <option value="9600">9600</option>
+                            <option value="57600">57600</option>
+                            <option value="115200" selected>115200</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="flash_osdp_addr" class="form-label text-secondary small fw-bold">OSDP Address</label>
+                        <select id="flash_osdp_addr" class="form-select bg-dark text-light border-secondary">
+                            {% for addr in range(0, 9) %}
+                                <option value="{{ addr }}" {% if addr == 0 %}selected{% endif %}>{{ addr }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="flash_fw_version" class="form-label text-secondary small fw-bold">Target FW Version</label>
+                    <input type="text" id="flash_fw_version" class="form-control bg-dark text-light border-secondary" readonly>
+                </div>
+
+                <div id="flash_status_output" class="p-3 bg-black rounded border border-secondary text-monospace small d-none" style="max-height: 120px; overflow-y: auto;"></div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" id="btn_execute_flash" class="btn btn-sm btn-info fw-bold px-4" onclick="executeFlashReader()">
+                    Execute OSDP Flash
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let flashModalInstance = null;
+
+function openFlashModal(configName, fwVersion) {
+    document.getElementById('flash_config_name').value = configName;
+    document.getElementById('flash_fw_version').value = fwVersion;
+    
+    const output = document.getElementById('flash_status_output');
+    output.classList.add('d-none');
+    output.innerHTML = '';
+    
+    const modalEl = document.getElementById('flashReaderModal');
+    flashModalInstance = new bootstrap.Modal(modalEl);
+    flashModalInstance.show();
+}
+
+function executeFlashReader() {
+    const configName = document.getElementById('flash_config_name').value;
+    const fwVersion = document.getElementById('flash_fw_version').value;
+    const baudRate = document.getElementById('flash_baud_rate').value;
+    const osdpAddr = document.getElementById('flash_osdp_addr').value;
+    
+    const btn = document.getElementById('btn_execute_flash');
+    const output = document.getElementById('flash_status_output');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Flashing...';
+    output.classList.remove('d-none');
+    output.innerHTML = '<span class="text-warning">Initializing OSDP connection...</span>';
+
+    fetch('/tools/osdp/flash', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            config_name: configName,
+            fw_version: fwVersion,
+            baud_rate: baudRate,
+            osdp_address: osdpAddr
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = 'Execute OSDP Flash';
+        if (data.success) {
+            output.innerHTML = `<span class="text-success">✔ ${data.message}</span>`;
+        } else {
+            output.innerHTML = `<span class="text-danger">✖ Flash failed: ${data.message}</span>`;
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = 'Execute OSDP Flash';
+        output.innerHTML = `<span class="text-danger">✖ Connection error: ${err.message}</span>`;
+    });
+}
+
+function toggleRunConfigTile(tile) {
+    const checkbox = tile.querySelector('.run-config-checkbox');
+    checkbox.checked = !checkbox.checked;
+    
+    if (checkbox.checked) {
+        tile.classList.add('selected');
+    } else {
+        tile.classList.remove('selected');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllBtn = document.getElementById('btn-modal-select-all');
+    const deselectAllBtn = document.getElementById('btn-modal-deselect-all');
+    
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', () => {
+            document.querySelectorAll('.run-config-tile').forEach(tile => {
+                const checkbox = tile.querySelector('.run-config-checkbox');
+                checkbox.checked = true;
+                tile.classList.add('selected');
+            });
+        });
+    }
+
+    if (deselectAllBtn) {
+        deselectAllBtn.addEventListener('click', () => {
+            document.querySelectorAll('.run-config-tile').forEach(tile => {
+                const checkbox = tile.querySelector('.run-config-checkbox');
+                checkbox.checked = false;
+                tile.classList.remove('selected');
+            });
+        });
+    }
+});
+</script>
+{% endblock %}
