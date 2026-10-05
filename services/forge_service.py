@@ -1,18 +1,16 @@
 import os
-import time
 import requests
 
 FORGE_BASE_URL = os.getenv('FORGE_BASE_URL', 'https://forge.wavelynxdev.com')
-ACTIVE_IAP_UID = os.getenv('ACTIVE_IAP_UID')
 ACTIVE_IAP_COOKIE = os.getenv('ACTIVE_IAP_COOKIE')
 
-def trigger_forge_build(config_name, fw_version, source="user", gitlab_ref="master"):
+def trigger_forge_build(config_name, fw_version, source="user", gitlab_ref="master", firmware_build_id=None):
     """
-    Triggers a profile build job on Forge via POST to /configs/build.
-    - source: 'user' (for forge/jhepburn@wavelynx.com/v5.4.11/) or 'master' (for input/v5.4.11/)
+    Triggers a build job on Forge via POST to /configs/build.
+    - If firmware_build_id is provided, Forge builds DCK envelopes.
     """
     if not ACTIVE_IAP_COOKIE:
-        print("[FORGE SERVICE] Warning: ACTIVE_IAP_COOKIE missing. Skipping real Forge trigger.")
+        print("[FORGE SERVICE] Warning: ACTIVE_IAP_COOKIE missing. Skipping Forge trigger.")
         return False
 
     url = f"{FORGE_BASE_URL.rstrip('/')}/configs/build"
@@ -32,6 +30,9 @@ def trigger_forge_build(config_name, fw_version, source="user", gitlab_ref="mast
         "config_name": config_name,
         "gitlab_ref": gitlab_ref
     }
+
+    if firmware_build_id:
+        payload["firmware_build_id"] = firmware_build_id
 
     try:
         print(f"[FORGE SERVICE] Submitting build for {config_name} ({version_str}) to Forge...")

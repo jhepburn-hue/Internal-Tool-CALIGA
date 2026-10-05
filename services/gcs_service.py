@@ -147,3 +147,70 @@ def get_or_build_profile_bin(config, fw_version, user_email, output_dir="downloa
 
     print(f"[GCS SERVICE] Timed out waiting for {config.config_name} BIN file from Forge.")
     return None
+
+def get_or_build_firmware_bin(config, fw_version, user_email, output_dir="downloads", timeout_seconds=60):
+    """
+    Downloads firmware DCK binary if it exists in GCS output/ or forge/.
+    If missing, ensures .ini is in Forge bucket, triggers Forge build,
+    and polls GCS for up to 60 seconds until the file lands.
+    """
+    clean_ver = fw_version.strip()
+    ver_with_v = clean_ver if clean_ver.startswith('v') else f"v{clean_ver}"
+    ver_no_v = clean_ver.lstrip('v')
+    
+    config_name = config.config_name
+    local_path = os.path.join(output_dir, f"{config_name}_{ver_with_v}_firmware.dck.bin")
+    os.makedirs(output_dir, exist_ok=True)
+
+    dck_targets = [
+        f"{config_name}_wall_DCK.bin",
+        f"{config_name}_DCK.bin",
+        f"{config_name}_wall_dck.bin",
+        f"{config_name}_dck.bin",
+        f"{config_name}_{ver_with_v}_DCK.bin",
+        f"{config_name}_{ver_no_v}_DCK.bin",
+    ]
+
+    versions = [ver_with_v, ver_no_v]
+    output_prefixes = [f"output/{v}/" for v in versions]
+    forge_prefixes = [f"forge/{user_email}/{v}/" for v in versions]
+
+    client = get_gcs_client()
+
+    if client:
+        bucket = client.bucket(GCS_BUCKET_NAME)
+
+        for prefix in output_prefixes:
+            blob = find_latest_matching_blob(bucket, prefix, dck_targets)
+            if blob:
+                blob.download_to_filename(local_path)
+                print(f"[GCS SERVICE] SUCCESS: Found Firmware BIN in Output Bucket -> gs://{GCS_BUCKET_NAME}/{blob.name}")
+                return local_path
+
+        for prefix in forge_prefixes:
+            blob = find_latest_matching_blob(bucket, prefix, dck_targets)
+            if blob:
+                blob.download_to_filename(local_path)
+                print(f"[GCS SERVICE] SUCCESS: Found Firmware BIN in Forge Bucket -> gs://{GCS_BUCKET_NAME}/{blob.name}")
+                return local_path
+
+    ini_path = get_or_create_ini_file(config, ver_with_v, user_email, output_dir)
+
+    trigger_forge_build(config.config_name, ver_with_v, source="user", firmware_build_id="422313")
+
+    if client:
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        start_time = time.time()
+        print(f"[GCS SERVICE] Polling GCS for {config.config_name} Firmware BIN in Forge (up to {timeout_seconds}s)...")
+
+        while time.time() - start_time < timeout_seconds:
+            for prefix in forge_prefixes:
+                blob = find_latest_matching_blob(bucket, prefix, dck_targets)
+                if blob:
+                    blob.download_to_filename(local_path)
+                    print(f"[GCS SERVICE] SUCCESS: Firmware BIN landed in Forge Bucket -> gs://{GCS_BUCKET_NAME}/{blob.name}")
+                    return local_path
+            time.sleep(3)
+
+    print(f"[GCS SERVICE] Timed out waiting for {config.config_name} Firmware BIN from Forge.")
+    return None
