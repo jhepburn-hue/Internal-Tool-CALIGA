@@ -121,15 +121,17 @@ def toggle_status(config_name, new_status):
 
     return redirect(url_for('configuration_details', config_name=config_name))
 
-@app.route('/configurations/<config_name>/alert-qa')
+@app.route('/configurations/<config_name>/alert-qa', endpoint='alert_qa')
 def alert_qa(config_name):
     config = Configuration.query.filter_by(config_name=config_name).first_or_404()
     current_user = inject_user()['current_user']
     user_email = current_user.email if current_user else "system@wavelynx.com"
+    fw_version = request.args.get('fw_version', 'v5.4.10').strip()
 
-    send_alert_qa_notification(config.config_name, config.status, user_email)
+    slack_sent = send_alert_qa_notification(config.config_name, config.status, user_email, fw_version=fw_version)
 
-    db.session.commit()
+    if slack_sent:
+        flash(f"QA team alerted for {config_name} via Slack!", "success")
 
     return redirect(url_for('configuration_details', config_name=config_name))
 
