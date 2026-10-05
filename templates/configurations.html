@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="fw-bold mb-0 text-light">Configurations</h3>
+        {% if current_user and (current_user.role == 'Sales') %}
+        <a href="#" class="btn btn-sm btn-success fw-semibold">+ Create New Configuration</a>
+        {% endif %}
+    </div>
+
+    <form method="GET" action="{{ url_for('configurations_list') }}" class="row g-3 mb-4">
+        <div class="col-md-8">
+            <input type="text" name="search" class="form-control bg-dark text-light border-secondary" 
+                   placeholder="Search by Config Name, Hex ID, or Dec ID..." 
+                   value="{{ search_query }}">
+        </div>
+        <div class="col-md-3">
+            <select name="status" class="form-select bg-dark text-light border-secondary">
+                <option value="">All Statuses</option>
+                <option value="Production" {% if status_filter == 'Production' %}selected{% endif %}>Production</option>
+                <option value="Active" {% if status_filter == 'Active' %}selected{% endif %}>Active</option>
+                <option value="POC" {% if status_filter == 'POC' %}selected{% endif %}>POC</option>
+                <option value="Archived" {% if status_filter == 'Archived' %}selected{% endif %}>Archived</option>
+            </select>
+        </div>
+        <div class="col-md-1 d-grid">
+            <button type="submit" class="btn btn-primary">Filter</button>
+        </div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle mb-0">
+            <thead>
+                <tr class="border-bottom border-secondary">
+                    <th>Config Name</th>
+                    <th>Config ID (Hex)</th>
+                    <th>Config ID (Dec)</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for config in configurations %}
+                <tr>
+                    <td class="fw-bold text-light">{{ config.config_name }}</td>
+                    <td><code>{{ config.config_id_hex or '-' }}</code></td>
+                    <td>{{ config.config_id_dec or '-' }}</td>
+                    <td>
+                        <span class="fw-bold 
+                            {% if config.status == 'Production' %}status-production
+                            {% elif config.status == 'Active' %}status-active
+                            {% elif config.status == 'POC' %}status-poc
+                            {% else %}status-archived{% endif %}">
+                            {{ config.status }}
+                        </span>
+                    </td>
+                    <td class="text-end">
+                        <a href="{{ url_for('configuration_details', config_name=config.config_name) }}" 
+                           class="btn btn-sm btn-outline-info">
+                           View Details
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-4">No configurations found matching criteria.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

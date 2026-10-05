@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <a href="{{ url_for('configurations_list') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Configurations</a>
+            <h2 class="fw-bold mb-0 text-light d-flex align-items-center gap-3">
+                {{ config.config_name }}
+                <span class="fs-6 badge 
+                    {% if config.status == 'Production' %}status-production
+                    {% elif config.status == 'Active' %}status-active
+                    {% elif config.status == 'POC' %}status-poc
+                    {% else %}status-archived{% endif %}">
+                    {{ config.status }}
+                </span>
+            </h2>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-warning" {% if config.status == 'Archived' %}disabled{% endif %}>
+                Alert QA
+            </button>
+
+            {% if current_user and (current_user.role == 'Sales') %}
+                {% if config.status == 'POC' %}
+                <a href="{{ url_for('toggle_status', config_name=config.config_name, new_status='Active') }}" class="btn btn-outline-warning">
+                    Promote to Active
+                </a>
+                {% elif config.status == 'Active' %}
+                <a href="{{ url_for('toggle_status', config_name=config.config_name, new_status='POC') }}" class="btn btn-outline-warning">
+                    Move to POC
+                </a>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    <hr class="border-secondary">
+
+    <div class="card bg-dark-subtle-custom p-3 mb-4 border-0">
+        <h6 class="fw-bold text-light mb-3">Available Action Tools</h6>
+        {% if config.status == 'Archived' %}
+            <p class="text-secondary mb-0">Action tools are disabled for Archived configurations.</p>
+        {% else %}
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Download INI</button>
+                <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Profile Bin</button>
+                <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Firmware Bin</button>
+                <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Flash Configuration</button>
+                <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Get Tokens</button>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
+                <h6 class="fw-bold role-header-navy mb-3">Reader & UI Interface</h6>
+                <table class="table table-dark table-sm mb-0">
+                    <tbody>
+                        <tr><td class="text-secondary">Idle LED:</td><td>{{ config.idle_led or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Credential Report LED:</td><td>{{ config.credential_report_led or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Beeper:</td><td>{{ config.beeper or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Keypad Format:</td><td>{{ config.keypad_format or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Tamper Monitoring:</td><td>{{ config.tamper_monitoring or '-' }}</td></tr>
+                        <tr><td class="text-secondary">CASI Output Format:</td><td>{{ config.casi_output_format or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Supervision State:</td><td>{{ config.supervision_state or '-' }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
+                <h6 class="fw-bold role-header-navy mb-3">Card Credentials & Prox</h6>
+                <table class="table table-dark table-sm mb-0">
+                    <tbody>
+                        <tr><td class="text-secondary">Card Type:</td><td>{{ config.card_type or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Facility Code:</td><td>{{ config.facility_code if config.facility_code is not none else '-' }}</td></tr>
+                        <tr><td class="text-secondary">Starting Badge:</td><td>{{ config.starting_badge or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Bitstream:</td><td class="text-light">{{ config.bitstream or '-' }}</td></tr>
+                        <tr><td class="text-secondary">FSK Prox:</td><td>{{ config.fsk_prox or '-' }}</td></tr>
+                        <tr><td class="text-secondary">ASK Prox:</td><td>{{ config.ask_prox or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Prox Filter:</td><td>{{ config.prox_filter or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Prox Filter Description:</td><td>{{ config.prox_filter_description or '-' }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
+                <h6 class="fw-bold role-header-navy mb-3">Mobile & Wireless Config</h6>
+                <table class="table table-dark table-sm mb-0">
+                    <tbody>
+                        <tr><td class="text-secondary">BLE Functionality:</td><td>{{ config.ble_functionality or '-' }}</td></tr>
+                        <tr><td class="text-secondary">NFC Functionality:</td><td>{{ config.nfc_functionality or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Mobile Keyset:</td><td>{{ config.mobile_keyset or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Legacy Credentials:</td><td>{{ config.legacy_credentials or '-' }}</td></tr>
+                        <tr><td class="text-secondary">Transport Mode:</td><td>{{ config.transport_mode or '-' }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
+                <h6 class="fw-bold role-header-navy mb-3">CSN Protocol Configurations</h6>
+                <table class="table table-dark table-sm mb-0">
+                    <tbody>
+                        <tr><td class="text-secondary">MFC CSN:</td><td>{{ config.mfc_csn or '-' }}</td></tr>
+                        <tr><td class="text-secondary">EV1/EV2 CSN:</td><td>{{ config.ev1_ev2_csn or '-' }}</td></tr>
+                        <tr><td class="text-secondary">iClass CSN:</td><td>{{ config.iclass_csn or '-' }}</td></tr>
+                        <tr><td class="text-secondary">ISO 15693 CSN:</td><td>{{ config.iso_15693_csn or '-' }}</td></tr>
+                        <tr><td class="text-secondary">ISO 14443A CSN:</td><td>{{ config.iso_14443a_csn or '-' }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if current_user and (current_user.role == 'SET') %}
+        <div class="mt-5">
+            <h5 class="fw-bold text-light mb-3">Revision History</h5>
+            <div class="table-responsive">
+                <table class="table table-dark table-hover align-middle mb-0">
+                    <thead>
+                        <tr class="border-bottom border-secondary">
+                            <th>Date & Time</th>
+                            <th>User</th>
+                            <th>Revision Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rev in revisions %}
+                        <tr>
+                            <td class="text-secondary">{{ rev.revision_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td>{{ rev.user_email }}</td>
+                            <td>{{ rev.revision_details }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-3">No revision history recorded for this configuration.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

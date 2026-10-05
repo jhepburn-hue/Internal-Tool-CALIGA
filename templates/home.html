@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card p-4">
+            <h2 class="fw-bold mb-3">CALIGA</h2>
+            
+            <hr class="border-secondary">
+
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <h5 class="fw-bold mb-3 text-light">Role-Based Access Control</h5>
+                    {% for role, permissions in role_descriptions.items() %}
+                    <div class="card mb-3 border-0 bg-dark-subtle-custom">
+                        <div class="card-body">
+                            <h6 class="card-title fw-bold role-header-navy">
+                                {{ role }} Operations
+                            </h6>
+                            <ul class="mb-0 ps-3 text-light">
+                                {% for perm in permissions %}
+                                <li class="mb-1">{{ perm }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="col-md-6">
+                    <h5 class="fw-bold mb-3 text-light">Lifecycle Status Classification</h5>
+                    {% for status, desc in status_descriptions.items() %}
+                    <div class="card mb-3 border-0 bg-dark-subtle-custom">
+                        <div class="card-body">
+                            <h6 class="card-title fw-bold 
+                                {% if status == 'Production' %}status-production
+                                {% elif status == 'Active' %}status-active
+                                {% elif status == 'POC' %}status-poc
+                                {% else %}status-archived{% endif %}">
+                                {{ status }}
+                            </h6>
+                            <p class="card-text text-light mb-0">{{ desc }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
