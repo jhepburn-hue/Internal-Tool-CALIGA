@@ -40,18 +40,34 @@
     <hr class="border-secondary">
 
     <div class="card bg-dark-subtle-custom p-3 mb-4 border-0">
-        <h6 class="fw-bold text-light mb-3">Available Action Tools</h6>
-        {% if config.status == 'Archived' %}
-            <p class="text-secondary mb-0">Action tools are disabled for Archived configurations.</p>
-        {% else %}
-            <div class="d-flex flex-wrap gap-2">
-                <a href="{{ url_for('download_ini', config_name=config.config_name) }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download INI</a>
-                <a href="{{ url_for('download_profile', config_name=config.config_name) }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Profile Bin</a>
-                <a href="{{ url_for('download_firmware', config_name=config.config_name) }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Firmware Bin</a>
-                <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Flash Configuration</button>
-                <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Get Tokens</button>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <h6 class="fw-bold text-light mb-0">Available Action Tools</h6>
+            
+            <div class="d-flex align-items-center gap-2">
+                <label for="fw_version_select" class="text-secondary small fw-bold mb-0">Target FW:</label>
+                <select id="fw_version_select" class="form-select form-select-sm bg-dark text-light border-secondary" style="width: 120px;">
+                    <option value="v5.4.10" selected>v5.4.10</option>
+                    <option value="v5.4.11">v5.4.11</option>
+                </select>
             </div>
-        {% endif %}
+        </div>
+
+        <div class="mt-3">
+            {% if config.status == 'Archived' %}
+                <p class="text-secondary mb-0">Action tools are disabled for Archived configurations.</p>
+            {% else %}
+                <div class="d-flex flex-wrap gap-2">
+                    <a id="btn-download-ini" href="{{ url_for('download_ini', config_name=config.config_name, fw_version='v5.4.10') }}" 
+                       class="btn btn-sm btn-outline-secondary text-light border-secondary">
+                        Download INI
+                    </a>
+                    <a href="#" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Profile Bin</a>
+                    <a href="#" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Firmware Bin</a>
+                    <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Flash Configuration</button>
+                    <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Get Tokens</button>
+                </div>
+            {% endif %}
+        </div>
     </div>
 
     <div class="row g-4">

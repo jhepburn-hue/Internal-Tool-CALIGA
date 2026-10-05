@@ -1,81 +1,72 @@
 import os
 from google.cloud import storage
+from services.ini_generator import generate_ini_from_config
 
-GCP_PROJECT_ID = os.getenv('GCP_PROJECT_ID')
+GCP_PROJECT_ID = os.getenv('GCP_PROJECT_ID', 'erebus-257721')
 GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', 'wavelynx_apex_config')
 
 def get_gcs_client():
-    """
-    Initializes and returns a Google Cloud Storage client if credentials exist.
-    """
-    credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-    if credentials_path and os.path.exists(credentials_path):
-        return storage.Client(project=GCP_PROJECT_ID)
-    return None
-
-def fetch_artifact_with_fallback(file_name, fw_version, user_email, destination_path):
-    """
-    Searches for a file in the GCS Input Bucket path first.
-    If not found, falls back to searching in the Forge Bucket path.
-
-    Paths:
-    - Primary (Input): wavelynx_apex_config/input/{fw_version}/{file_name}
-    - Fallback (Forge): wavelynx_apex_config/forge/{user_email}/{fw_version}/{file_name}
-    """
-    client = get_gcs_client()
+    """Initializes GCS client using Application Default Credentials (ADC) or explicit credentials if file exists."""
+    creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
     
-    primary_blob_path = f"input/{fw_version}/{file_name}"
-    fallback_blob_path = f"forge/{user_email}/{fw_version}/{file_name}"
-
-    if not client:
-        print(f"[GCS SERVICE] Local credentials missing. Simulating artifact download for {file_name} ({fw_version})")
-        os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-        with open(destination_path, 'w') as f:
-            f.write(f"# Simulated GCS artifact for {file_name}\n# FW Version: {fw_version}\n")
-        return True
+    if creds_path and not os.path.exists(creds_path):
+        del os.environ['GOOGLE_APPLICATION_CREDENTIALS']
 
     try:
-        bucket = client.bucket(GCS_BUCKET_NAME)
-
-        primary_blob = bucket.blob(primary_blob_path)
-        if primary_blob.exists():
-            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-            primary_blob.download_to_filename(destination_path)
-            print(f"[GCS SERVICE] Found & downloaded from Input path: {primary_blob_path}")
-            return True
-
-        print(f"[GCS SERVICE] File '{file_name}' not found in Input path '{primary_blob_path}'. Searching Forge path '{fallback_blob_path}'...")
-        fallback_blob = bucket.blob(fallback_blob_path)
-        if fallback_blob.exists():
-            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-            fallback_blob.download_to_filename(destination_path)
-            print(f"[GCS SERVICE] Found & downloaded from Forge fallback path: {fallback_blob_path}")
-            return True
-        else:
-            print(f"[GCS SERVICE] Error: '{file_name}' was not found in either Input or Forge bucket paths.")
-            return False
-
+        return storage.Client(project=GCP_PROJECT_ID)
     except Exception as e:
-        print(f"[GCS SERVICE] Exception during download of {file_name}: {e}")
-        return False
+        print(f"[GCS SERVICE] Warning: Couldn't initialize GCS client ({e}). Running in fallback mode.")
+        return None
 
-def download_ini_file(config_name, fw_version, user_email, output_dir="downloads"):
-    """Downloads the .ini configuration file."""
-    file_name = f"{config_name}.ini"
-    dest_path = os.path.join(output_dir, file_name)
-    success = fetch_artifact_with_fallback(file_name, fw_version, user_email, dest_path)
-    return dest_path if success else None
+def get_or_create_ini_file(config, fw_version, user_email, output_dir="downloads"):
+    """
+    1. Searches Input Bucket: input/{fw_version}/{config_name}.ini
+    2. Searches Fallback Input Bucket (without 'v' prefix if needed)
+    3. Searches Forge Bucket: forge/{user_email}/{fw_version}/{config_name}.ini
+    4. If NOT found anywhere, generates INI from DB and uploads to Forge Bucket.
+    """
+    file_name = f"{config.config_name}.ini"
+    local_path = os.path.join(output_dir, file_name)
+    os.makedirs(output_dir, exist_ok=True)
 
-def download_profile_bin(config_name, fw_version, user_email, output_dir="downloads"):
-    """Downloads the Profile .bin file."""
-    file_name = f"{config_name}_profile.bin"
-    dest_path = os.path.join(output_dir, file_name)
-    success = fetch_artifact_with_fallback(file_name, fw_version, user_email, dest_path)
-    return dest_path if success else None
+    clean_ver = fw_version.strip()
+    ver_with_v = clean_ver if clean_ver.startswith('v') else f"v{clean_ver}"
+    ver_no_v = clean_ver.lstrip('v')
 
-def download_firmware_bin(fw_version, user_email, output_dir="downloads"):
-    """Downloads the Firmware .bin file based on firmware version."""
-    file_name = f"firmware_{fw_version}.bin"
-    dest_path = os.path.join(output_dir, file_name)
-    success = fetch_artifact_with_fallback(file_name, fw_version, user_email, dest_path)
-    return dest_path if success else None
+    candidate_paths = [
+        f"input/{ver_with_v}/{file_name}",
+        f"input/{ver_no_v}/{file_name}",
+        f"forge/{user_email}/{ver_with_v}/{file_name}",
+        f"forge/{user_email}/{ver_no_v}/{file_name}",
+    ]
+
+    client = get_gcs_client()
+
+    if client:
+        try:
+            bucket = client.bucket(GCS_BUCKET_NAME)
+            for path in candidate_paths:
+                blob = bucket.blob(path)
+                if blob.exists():
+                    blob.download_to_filename(local_path)
+                    print(f"[GCS SERVICE] SUCCESS: Found and downloaded from GCS -> gs://{GCS_BUCKET_NAME}/{path}")
+                    return local_path
+                else:
+                    print(f"[GCS SERVICE] Checked path (not found): gs://{GCS_BUCKET_NAME}/{path}")
+        except Exception as e:
+            print(f"[GCS SERVICE] Exception checking bucket: {e}")
+
+    print(f"[GCS SERVICE] '{file_name}' not found in GCS. Generating from DB model...")
+    generate_ini_from_config(config, local_path)
+
+    if client:
+        forge_upload_path = f"forge/{user_email}/{ver_with_v}/{file_name}"
+        try:
+            bucket = client.bucket(GCS_BUCKET_NAME)
+            blob = bucket.blob(forge_upload_path)
+            blob.upload_from_filename(local_path)
+            print(f"[GCS SERVICE] Uploaded generated INI to Forge Bucket -> gs://{GCS_BUCKET_NAME}/{forge_upload_path}")
+        except Exception as e:
+            print(f"[GCS SERVICE] Could not upload to Forge bucket: {e}")
+
+    return local_path
