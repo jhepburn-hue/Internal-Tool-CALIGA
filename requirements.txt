@@ -14,3 +14,4 @@ crcmod==1.7
 cryptography==46.0.7
 Jinja2==3.1.6
 Werkzeug==3.1.8
+PyYAML>=6.0

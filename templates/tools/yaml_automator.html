@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <a href="{{ url_for('tools') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Tools</a>
+            <h2 class="fw-bold text-light mb-0">YAML Automator</h2>
+            <p class="text-secondary small mb-0">Automate SAM Chip YAML profile creation with dynamic OEM SKU indexing, TCI hex formatting, and specialty key generation.</p>
+        </div>
+    </div>
+
+    <hr class="border-secondary mb-4">
+
+    <form method="POST" action="{{ url_for('tool_yaml_automator') }}">
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="card bg-dark-subtle-custom p-3 border-0 h-100">
+                    <h6 class="fw-bold role-header-navy mb-3">Hardware & Partner Integration</h6>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">SAM Type *</label>
+                        <select name="sam_type_choice" class="form-select bg-dark text-light border-secondary" required>
+                            <option value="sam_av2">SAM AV2</option>
+                            <option value="sam_av3" selected>SAM AV3</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">Partner *</label>
+                        <select name="partner_choice" class="form-select bg-dark text-light border-secondary" required>
+                            <option value="elatec">Elatec</option>
+                            <option value="rfideas" selected>RFIdeas</option>
+                            <option value="brivo">Brivo</option>
+                            <option value="test">Test</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">Partner Km Number *</label>
+                        <select name="partner_km_choice" class="form-select bg-dark text-light border-secondary" required>
+                            <option value="elatec">Elatec</option>
+                            <option value="rfideas" selected>RFIdeas</option>
+                            <option value="brivo">Brivo</option>
+                            <option value="pdq">PDQ</option>
+                            <option value="test">Test</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">OEM Name / SKU *</label>
+                        <input type="text" name="oem" class="form-control bg-dark text-light border-secondary" placeholder="e.g. PDK or BRIVO" required>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="leaf_si_choice" value="true" id="chk_leaf_si" checked>
+                        <label class="form-check-label text-light fw-bold small" for="chk_leaf_si">Include Leaf Si</label>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">Leaf Cc Keyset *</label>
+                        <input type="text" name="leaf_cc_choice" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Lk50003" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">Secondary Leaf Cc Keyset (Optional)</label>
+                        <input type="text" name="second_leaf_cc_choice" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Lk10021">
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card bg-dark-subtle-custom p-3 border-0 h-100">
+                    <h6 class="fw-bold role-header-navy mb-3">Crypto, TCI & ECP Parameters</h6>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">TCI Value (6 Hex Digits) *</label>
+                        <input type="text" name="tci_choice" class="form-control bg-dark text-light border-secondary" placeholder="e.g. 0209FE" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">ECP Terminal Info Mode *</label>
+                        <select name="ecp_terminal_choice" class="form-select bg-dark text-light border-secondary" required>
+                            <option value="tra_express">TRA Express (0xC3)</option>
+                            <option value="tra_enabled">TRA Enabled (0x83)</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">ECP Terminal Subtype *</label>
+                        <select name="ecp_terminal_subtype_choice" class="form-select bg-dark text-light border-secondary" required>
+                            <option value="university">University</option>
+                            <option value="corporate" selected>Corporate</option>
+                            <option value="hospitality">Hospitality</option>
+                            <option value="residential">Residential</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">ECP Bit Count</label>
+                        <input type="number" name="ecp_bit_count_choice" class="form-control bg-dark text-light border-secondary" value="40" min="0">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">ECP Application Option *</label>
+                        <select name="ecp_app_choice" class="form-select bg-dark text-light border-secondary" required>
+                            <option value="credential_app">Credential App</option>
+                            <option value="secure_app">Secure App</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-secondary fw-bold small">Mifare 2Go Application ID *</label>
+                        <select name="mifare_2go_app_id_choice" class="form-select bg-dark text-light border-secondary" required>
+                            <option value="generic">Generic (0xF532F0)</option>
+                            <option value="leaf">Leaf (0xF51CDF)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="specialty_keys_choice" value="true" id="specialty_keys">
+                        <label class="form-check-label text-light fw-bold small" for="specialty_keys">Include Specialty Keys</label>
+                    </div>
+
+                    <div id="specialty-fields" class="card bg-dark p-3 border-secondary d-none mb-3">
+                        <div class="mb-2">
+                            <label class="form-label text-secondary fw-bold small">Key Slot</label>
+                            <input type="number" id="key_slot" name="key_slot" class="form-control form-control-sm bg-dark text-light border-secondary" value="64">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label text-secondary fw-bold small">Key Version (0 - 2)</label>
+                            <input type="number" id="key_version" name="key_version" class="form-control form-control-sm bg-dark text-light border-secondary" value="0" min="0" max="2">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label text-secondary fw-bold small">Key Type</label>
+                            <select id="key_type" name="key_type_choice" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                <option value="aes_128">AES-128 Key (0x20)</option>
+                                <option value="mifare">MIFARE Key (0x10)</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label text-secondary fw-bold small">Key Use</label>
+                            <select id="key_use" name="key_use_choice" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                <option value="picc">PICC Key</option>
+                                <option value="offline_crypto">Offline Crypto Key</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mt-4">
+            <button type="reset" class="btn btn-outline-secondary" id="reset_btn">Reset Form</button>
+            <button type="submit" class="btn btn-success fw-bold px-4">Generate YAML &rarr;</button>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const specialtyChk = document.getElementById('specialty_keys');
+    const specialtyContainer = document.getElementById('specialty-fields');
+    const resetBtn = document.getElementById('reset_btn');
+
+    if (specialtyChk && specialtyContainer) {
+        specialtyChk.addEventListener('change', function() {
+            if (this.checked) {
+                specialtyContainer.classList.remove('d-none');
+            } else {
+                specialtyContainer.classList.add('d-none');
+            }
+        });
+    }
+
+    if (resetBtn && specialtyContainer) {
+        resetBtn.addEventListener('click', function() {
+            specialtyContainer.classList.add('d-none');
+        });
+    }
+});
+</script>
+{% endblock %}
