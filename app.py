@@ -9,6 +9,7 @@ from services.slack_service import send_alert_qa_notification
 from services.gcs_service import get_or_create_ini_file, get_or_build_profile_bin, get_or_build_firmware_bin
 from services.osdp_service import flash_firmware_osdp, find_rs485_port
 from services.pocketbase_service import process_get_tokens
+from services.ini_translator_service import translate_uploaded_ini
 
 load_dotenv()
 
@@ -514,16 +515,25 @@ def tool_partial_config():
         return redirect(url_for('tool_partial_config'))
     return render_template('tools/partial_config.html')
 
-@app.route('/tools/ini-translator', methods=['GET', 'POST'])
+@app.route('/tools/ini-translator', methods=['GET', 'POST'], strict_slashes=False)
 def tool_ini_translator():
-    translated_output = None
+    translation_result = None
+
     if request.method == 'POST':
         file = request.files.get('ini_file')
-        if file:
-            content = file.read().decode('utf-8', errors='ignore')
-            translated_output = content 
-            flash('INI File successfully translated.', 'success')
-    return render_template('tools/ini_translator.html', output=translated_output)
+
+        if file and file.filename != '':
+            ini_content = file.read().decode('utf-8', errors='ignore')
+            translation_result = translate_uploaded_ini(ini_content)
+            
+            if translation_result.get("error"):
+                flash(translation_result["error"], "danger")
+            else:
+                flash(f"Successfully translated '{file.filename}' using default settings context.", "success")
+        else:
+            flash("Please upload an INI file to translate.", "warning")
+
+    return render_template('tools/ini_translator.html', result=translation_result)
 
 @app.route('/tools/yaml-automator', methods=['GET', 'POST'])
 def tool_yaml_automator():

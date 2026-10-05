@@ -1,19 +1,65 @@
 {% extends 'base.html' %}
+
 {% block content %}
 <div class="card p-4 mb-4">
-    <a href="{{ url_for('tools') }}" class="btn btn-sm btn-outline-secondary mb-3 align-self-start">&larr; Back to Tools</a>
-    <h3 class="fw-bold text-light mb-3">INI Translator</h3>
-    <form method="POST" enctype="multipart/form-data" class="mb-4">
-        <div class="mb-3">
-            <label class="form-label text-secondary fw-bold">Upload INI File</label>
-            <input type="file" name="ini_file" class="form-control bg-dark text-light border-secondary" accept=".ini" required>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <a href="{{ url_for('tools') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Tools</a>
+            <h2 class="fw-bold text-light mb-0">INI Translator</h2>
+            <p class="text-secondary small mb-0">Upload an INI configuration file to translate raw reader directives into comprehensive, plain English descriptions.</p>
         </div>
-        <button type="submit" class="btn btn-info">Translate to English</button>
+    </div>
+
+    <hr class="border-secondary mb-4">
+
+    <form method="POST" action="{{ url_for('tool_ini_translator') }}" enctype="multipart/form-data">
+        <div class="card bg-dark-subtle-custom p-4 border-0 mb-4">
+            <h6 class="fw-bold text-light mb-2">Upload Reader INI File</h6>
+            <p class="text-secondary small mb-3">Select any <code>.ini</code> configuration file from your computer to analyze and translate.</p>
+
+            <div class="row g-3 align-items-center">
+                <div class="col-md-9">
+                    <input type="file" name="ini_file" class="form-control bg-dark text-light border-secondary" accept=".ini" required>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-info fw-bold w-100">
+                        Translate INI File &rarr;
+                    </button>
+                </div>
+            </div>
+        </div>
     </form>
 
-    {% if output %}
-        <h5 class="fw-bold text-light mt-4">Translated Output</h5>
-        <pre class="bg-dark text-success p-3 rounded border border-secondary">{{ output }}</pre>
+    {% if result and result.sections %}
+        <hr class="border-secondary my-4">
+        <h5 class="fw-bold text-light mb-3">Translated Settings Analysis</h5>
+
+        {% for sec in result.sections %}
+            <div class="card bg-dark-subtle-custom border-secondary p-3 mb-3">
+                <h6 class="fw-bold role-header-navy mb-3">{{ sec.section_title }}</h6>
+                
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover align-middle mb-0">
+                        <thead>
+                            <tr class="border-bottom border-secondary text-secondary">
+                                <th style="width: 25%;">INI Directive</th>
+                                <th style="width: 50%;">Setting Description</th>
+                                <th style="width: 25%;">Translated Setting</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in sec.entries %}
+                            <tr>
+                                <td><code>{{ item.raw_key }}</code></td>
+                                <td class="text-light">{{ item.description }}</td>
+                                <td class="text-info fw-bold">{{ item.translated_value }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% endfor %}
     {% endif %}
 </div>
 {% endblock %}
