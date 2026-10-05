@@ -1,0 +1,293 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<form action="{{ url_for('create_configuration') }}" method="POST">
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <a href="{{ url_for('configurations_list') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Configurations</a>
+            <div class="d-flex align-items-center gap-3">
+                <h2 class="fw-bold mb-0 text-light">Create New Configuration</h2>
+                <span class="fs-6 badge status-poc">Status: POC</span>
+            </div>
+        </div>
+
+        <div>
+            <button type="submit" class="btn btn-success px-4 fw-bold">Save Configuration</button>
+        </div>
+    </div>
+
+    <hr class="border-secondary">
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <label class="form-label text-secondary fw-bold">Config Name *</label>
+            <input type="text" name="config_name" value="{{ config.config_name }}" class="form-control bg-dark text-light border-secondary" required>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary fw-bold">Config ID (Dec)</label>
+            <input type="text" value="{{ config.config_id_dec }}" class="form-control bg-dark text-secondary border-secondary" readonly>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-secondary fw-bold">Config ID (Hex)</label>
+            <input type="text" value="{{ config.config_id_hex }}" class="form-control bg-dark text-secondary border-secondary" readonly>
+        </div>
+    </div>
+
+    {% set is_editable = True %}
+    {% set csn_options = ['Off', 'On', 'Standard', '32-bit MSB', '32-bit LSB', '40-bit MSB', '40-bit LSB', '56-bit MSB', '56-bit LSB'] %}
+
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
+                <h6 class="fw-bold role-header-navy mb-3">Reader & UI Interface</h6>
+                <table class="table table-dark table-sm align-middle mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-secondary w-50">Idle LED:</td>
+                            <td>
+                                <select name="idle_led" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['Off', 'Blue', 'Green', 'Red', 'Amber', 'Magenta', 'Cyan', 'White'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Credential Report LED:</td>
+                            <td>
+                                <select name="credential_report_led" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['Off', 'Blue', 'Green', 'Red', 'Amber', 'Magenta', 'Cyan', 'White'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Beeper:</td>
+                            <td>
+                                <select name="beeper" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['On', 'Off'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Keypad Format:</td>
+                            <td>
+                                <select name="keypad_format" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['8-bit', '4-bit', 'buffered 26-bit', 'Magstripe - 4 digit', 'Magstripe - 5 digit'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Tamper Monitoring:</td>
+                            <td>
+                                <select name="tamper_monitoring" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['On', 'Off'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">CASI Output Format:</td>
+                            <td>
+                                <select name="casi_output_format" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['CASI-4001', 'CASI-4002'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Supervision State:</td>
+                            <td>
+                                <select name="supervision_state" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['2-State', '4-State', 'unsupervised'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
+                <h6 class="fw-bold role-header-navy mb-3">Card Credentials & Prox</h6>
+                <table class="table table-dark table-sm align-middle mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-secondary w-50">Card Type:</td>
+                            <td><input type="text" name="card_type" placeholder="e.g. PACS" class="form-control form-control-sm bg-dark text-light border-secondary"></td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Facility Code:</td>
+                            <td><input type="number" name="facility_code" placeholder="e.g. 100" class="form-control form-control-sm bg-dark text-light border-secondary"></td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Starting Badge:</td>
+                            <td><input type="text" name="starting_badge" placeholder="e.g. 1001" class="form-control form-control-sm bg-dark text-light border-secondary"></td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Bitstream:</td>
+                            <td><input type="text" name="bitstream" placeholder="e.g. 26-bit" class="form-control form-control-sm bg-dark text-light border-secondary"></td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">FSK Prox:</td>
+                            <td>
+                                <select name="fsk_prox" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['Off', 'On'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">ASK Prox:</td>
+                            <td>
+                                <select name="ask_prox" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['Off', 'On'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Prox Filter:</td>
+                            <td>
+                                <select name="prox_filter" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['Off', 'On'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Prox Filter Description:</td>
+                            <td><input type="text" name="prox_filter_description" class="form-control form-control-sm bg-dark text-light border-secondary"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
+                <h6 class="fw-bold role-header-navy mb-3">Mobile & Wireless Config</h6>
+                <table class="table table-dark table-sm align-middle mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-secondary w-50">BLE Functionality:</td>
+                            <td>
+                                <select name="ble_functionality" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['WaveLynx', 'AMAG', 'Brivo', 'Fidelity', 'SafeTrust'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">NFC Functionality:</td>
+                            <td>
+                                <select name="nfc_functionality" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['Disabled', 'Enabled'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Mobile Keyset:</td>
+                            <td>
+                                <select name="mobile_keyset" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['WaveLynx Transport', 'AMAG Transport', 'Custom'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Legacy Credentials:</td>
+                            <td>
+                                <select name="legacy_credentials" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['Off', 'On'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Transport Mode:</td>
+                            <td>
+                                <select name="transport_mode" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['Off', 'On'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
+                <h6 class="fw-bold role-header-navy mb-3">CSN Protocol Configurations</h6>
+                <table class="table table-dark table-sm align-middle mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-secondary w-50">MFC CSN:</td>
+                            <td>
+                                <select name="mfc_csn" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in csn_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">EV1/EV2 CSN:</td>
+                            <td>
+                                <select name="ev1_ev2_csn" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in csn_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">iClass CSN:</td>
+                            <td>
+                                <select name="iclass_csn" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in csn_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">ISO 15693 CSN:</td>
+                            <td>
+                                <select name="iso_15693_csn" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in csn_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">ISO 14443A CSN:</td>
+                            <td>
+                                <select name="iso_14443a_csn" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in csn_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+</form>
+{% endblock %}

@@ -1,5 +1,6 @@
 import os
 import time
+from sqlalchemy import func
 from flask import Flask, render_template, session, request, redirect, url_for, send_file, request, Response, stream_with_context, jsonify, flash, json
 from models import db, User, Configuration, RevisionHistory
 from dotenv import load_dotenv
@@ -385,6 +386,98 @@ def update_configuration(config_name):
     else:
         flash("No changes detected.", "info")
 
+    return redirect(url_for('configuration_details', config_name=config_name))
+
+@app.route('/configurations/new', methods=['GET'])
+def new_configuration():
+    current_user = inject_user()['current_user']
+    if not current_user or current_user.role not in ['Sales']:
+        flash("You do not have permission to create new configurations.", "danger")
+        return redirect(url_for('configurations_list'))
+
+    max_dec = db.session.query(
+        func.max(db.cast(db.func.nullif(Configuration.config_id_dec, ''), db.Integer))
+    ).scalar() or 0
+
+    next_id_dec = max_dec + 1
+    next_id_hex = f"0x{next_id_dec:04X}"
+
+    config = Configuration(
+        config_name=f"CONFIG_{next_id_dec}",
+        config_id_dec=str(next_id_dec),
+        config_id_hex=next_id_hex,
+        status="POC"
+    )
+
+    return render_template('create_configuration.html', config=config, is_new=True)
+
+@app.route('/configurations/create', methods=['POST'])
+def create_configuration():
+    current_user = inject_user()['current_user']
+    if not current_user or current_user.role not in ['Sales']:
+        flash("You do not have permission to create configurations.", "danger")
+        return redirect(url_for('configurations_list'))
+
+    config_name = request.form.get('config_name', '').strip()
+    if not config_name:
+        flash("Configuration name is required.", "danger")
+        return redirect(url_for('new_configuration'))
+
+    if Configuration.query.filter_by(config_name=config_name).first():
+        flash(f"A configuration with name '{config_name}' already exists.", "danger")
+        return redirect(url_for('new_configuration'))
+
+    max_dec = db.session.query(
+        func.max(db.cast(db.func.nullif(Configuration.config_id_dec, ''), db.Integer))
+    ).scalar() or 0
+
+    next_id_dec = max_dec + 1
+    next_id_hex = f"0x{next_id_dec:04X}"
+
+    new_config = Configuration(
+        config_name=config_name,
+        config_id_dec=str(next_id_dec),
+        config_id_hex=next_id_hex,
+        status="POC",
+        previous_status="POC",
+        idle_led=request.form.get('idle_led'),
+        credential_report_led=request.form.get('credential_report_led'),
+        beeper=request.form.get('beeper'),
+        keypad_format=request.form.get('keypad_format'),
+        tamper_monitoring=request.form.get('tamper_monitoring'),
+        casi_output_format=request.form.get('casi_output_format'),
+        supervision_state=request.form.get('supervision_state'),
+        card_type=request.form.get('card_type') or None,
+        facility_code=int(request.form.get('facility_code')) if request.form.get('facility_code', '').isdigit() else None,
+        starting_badge=request.form.get('starting_badge') or None,
+        bitstream=request.form.get('bitstream') or None,
+        fsk_prox=request.form.get('fsk_prox'),
+        ask_prox=request.form.get('ask_prox'),
+        prox_filter=request.form.get('prox_filter'),
+        prox_filter_description=request.form.get('prox_filter_description') or None,
+        ble_functionality=request.form.get('ble_functionality'),
+        nfc_functionality=request.form.get('nfc_functionality'),
+        mobile_keyset=request.form.get('mobile_keyset'),
+        legacy_credentials=request.form.get('legacy_credentials'),
+        transport_mode=request.form.get('transport_mode'),
+        mfc_csn=request.form.get('mfc_csn'),
+        ev1_ev2_csn=request.form.get('ev1_ev2_csn'),
+        iclass_csn=request.form.get('iclass_csn'),
+        iso_15693_csn=request.form.get('iso_15693_csn'),
+        iso_14443a_csn=request.form.get('iso_14443a_csn')
+    )
+
+    db.session.add(new_config)
+
+    rev = RevisionHistory(
+        config_name=config_name,
+        user_email=current_user.email if current_user else "system@wavelynx.com",
+        revision_details=f"Created new configuration (ID Dec: {next_id_dec}, Hex: {next_id_hex}) in POC status."
+    )
+    db.session.add(rev)
+    db.session.commit()
+
+    flash(f"Configuration '{config_name}' successfully created!", "success")
     return redirect(url_for('configuration_details', config_name=config_name))
 
 if __name__ == '__main__':
