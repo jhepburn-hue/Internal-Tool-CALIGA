@@ -1,40 +1,46 @@
 {% extends 'base.html' %}
 
 {% block content %}
+<form action="{{ url_for('update_configuration', config_name=config.config_name) }}" method="POST">
 <div class="card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <a href="{{ url_for('configurations_list') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Configurations</a>
-            <h2 class="fw-bold mb-0 text-light d-flex align-items-center gap-3">
-                {{ config.config_name }}
+            
+            <div class="d-flex align-items-center gap-3">
+                <h2 class="fw-bold mb-0 text-light">{{ config.config_name }}</h2>
+                
                 <span class="fs-6 badge 
                     {% if config.status == 'Production' %}status-production
                     {% elif config.status == 'Active' %}status-active
                     {% elif config.status == 'POC' %}status-poc
                     {% else %}status-archived{% endif %}">
-                    {{ config.status }}
+                    Status: {{ config.status }}
                 </span>
-            </h2>
+
+                {% if current_user and current_user.role in ['Sales'] and config.status in ['POC', 'Active'] %}
+                    {% if config.status == 'POC' %}
+                        <a href="{{ url_for('toggle_status', config_name=config.config_name, new_status='Active') }}" class="btn btn-sm btn-outline-info">
+                            Switch to Active
+                        </a>
+                    {% elif config.status == 'Active' %}
+                        <a href="{{ url_for('toggle_status', config_name=config.config_name, new_status='POC') }}" class="btn btn-sm btn-outline-info">
+                            Switch to POC
+                        </a>
+                    {% endif %}
+                {% endif %}
+            </div>
         </div>
 
         <div class="d-flex gap-2">
+            {% if config.status == 'POC' and current_user and current_user.role in ['SET', 'Sales'] %}
+                <button type="submit" class="btn btn-sm btn-success px-3">Save Changes</button>
+            {% endif %}
             <a id="btn-alert-qa" 
             href="{{ url_for('alert_qa', config_name=config.config_name, fw_version='v5.4.10') }}" 
-            class="btn btn-sm btn-outline-warning text-light border-warning me-2">
+            class="btn btn-sm btn-outline-warning text-light border-warning">
                 Alert QA
             </a>
-
-            {% if current_user and (current_user.role == 'Sales') %}
-                {% if config.status == 'POC' %}
-                <a href="{{ url_for('toggle_status', config_name=config.config_name, new_status='Active') }}" class="btn btn-outline-warning">
-                    Promote to Active
-                </a>
-                {% elif config.status == 'Active' %}
-                <a href="{{ url_for('toggle_status', config_name=config.config_name, new_status='POC') }}" class="btn btn-outline-warning">
-                    Move to POC
-                </a>
-                {% endif %}
-            {% endif %}
         </div>
     </div>
 
@@ -43,7 +49,6 @@
     <div class="card bg-dark-subtle-custom p-3 mb-4 border-0">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
             <h6 class="fw-bold text-light mb-0">Available Action Tools</h6>
-            
             <div class="d-flex align-items-center gap-2">
                 <label for="fw_version_select" class="text-secondary small fw-bold mb-0">Target FW:</label>
                 <select id="fw_version_select" class="form-select form-select-sm bg-dark text-light border-secondary" style="width: 120px;">
@@ -58,48 +63,109 @@
                 <p class="text-secondary mb-0">Action tools are disabled for Archived configurations.</p>
             {% else %}
                 <div class="d-flex flex-wrap gap-2">
-                    <a id="btn-download-ini" href="{{ url_for('download_ini', config_name=config.config_name, fw_version='v5.4.10') }}" 
-                       class="btn btn-sm btn-outline-secondary text-light border-secondary">
-                        Download INI
-                    </a>
-                    <a id="btn-download-profile" 
-                    href="{{ url_for('download_profile', config_name=config.config_name, fw_version='v5.4.10') }}" 
-                    class="btn btn-sm btn-outline-secondary text-light border-secondary">
-                        Download Profile Bin
-                    </a>
-                    <a id="btn-download-firmware" 
-                    href="{{ url_for('download_firmware', config_name=config.config_name, fw_version='v5.4.10') }}" 
-                    class="btn btn-sm btn-outline-secondary text-light border-secondary">
-                        Download Firmware Bin
-                    </a>
-                    <a id="btn-flash-config" 
-                    href="{{ url_for('flash_configuration', config_name=config.config_name, fw_version='v5.4.10') }}" 
-                    class="btn btn-sm btn-outline-secondary text-light border-secondary">
-                        Flash Configuration
-                    </a>
-                    <a id="btn-get-tokens" 
-                    href="#" 
-                    class="btn btn-sm btn-outline-secondary text-light border-secondary">
-                        Get Tokens
-                    </a>
+                    <a id="btn-download-ini" href="{{ url_for('download_ini', config_name=config.config_name, fw_version='v5.4.10') }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download INI</a>
+                    <a id="btn-download-profile" href="{{ url_for('download_profile', config_name=config.config_name, fw_version='v5.4.10') }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Profile Bin</a>
+                    <a id="btn-download-firmware" href="{{ url_for('download_firmware', config_name=config.config_name, fw_version='v5.4.10') }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Firmware Bin</a>
+                    <a id="btn-flash-config" href="{{ url_for('flash_configuration', config_name=config.config_name, fw_version='v5.4.10') }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Flash Configuration</a>
+                    <a id="btn-get-tokens" href="#" class="btn btn-sm btn-outline-secondary text-light border-secondary">Get Tokens</a>
                 </div>
             {% endif %}
         </div>
     </div>
 
+    {% set is_editable = (config.status == 'POC' and current_user and current_user.role in ['SET', 'Sales']) %}
+    {% set csn_options = ['Off', 'On', 'Standard', '32-bit MSB', '32-bit LSB', '40-bit MSB', '40-bit LSB', '56-bit MSB', '56-bit LSB'] %}
+
     <div class="row g-4">
         <div class="col-md-6">
             <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
                 <h6 class="fw-bold role-header-navy mb-3">Reader & UI Interface</h6>
-                <table class="table table-dark table-sm mb-0">
+                <table class="table table-dark table-sm align-middle mb-0">
                     <tbody>
-                        <tr><td class="text-secondary">Idle LED:</td><td>{{ config.idle_led or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Credential Report LED:</td><td>{{ config.credential_report_led or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Beeper:</td><td>{{ config.beeper or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Keypad Format:</td><td>{{ config.keypad_format or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Tamper Monitoring:</td><td>{{ config.tamper_monitoring or '-' }}</td></tr>
-                        <tr><td class="text-secondary">CASI Output Format:</td><td>{{ config.casi_output_format or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Supervision State:</td><td>{{ config.supervision_state or '-' }}</td></tr>
+                        <tr>
+                            <td class="text-secondary w-50">Idle LED:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="idle_led" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['Off', 'Blue', 'Green', 'Red', 'Amber', 'Magenta', 'Cyan', 'White'] %}
+                                            <option value="{{ opt }}" {% if config.idle_led == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.idle_led or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Credential Report LED:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="credential_report_led" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['Off', 'Blue', 'Green', 'Red', 'Amber', 'Magenta', 'Cyan', 'White'] %}
+                                            <option value="{{ opt }}" {% if config.credential_report_led == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.credential_report_led or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Beeper:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="beeper" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['On', 'Off'] %}
+                                            <option value="{{ opt }}" {% if config.beeper == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.beeper or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Keypad Format:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="keypad_format" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['8-bit', '4-bit', 'buffered 26-bit', 'Magstripe - 4 digit', 'Magstripe - 5 digit'] %}
+                                            <option value="{{ opt }}" {% if config.keypad_format == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.keypad_format or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Tamper Monitoring:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="tamper_monitoring" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['On', 'Off'] %}
+                                            <option value="{{ opt }}" {% if config.tamper_monitoring == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.tamper_monitoring or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">CASI Output Format:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="casi_output_format" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['CASI-4001', 'CASI-4002'] %}
+                                            <option value="{{ opt }}" {% if config.casi_output_format == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.casi_output_format or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Supervision State:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="supervision_state" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['2-State', '4-State', 'unsupervised'] %}
+                                            <option value="{{ opt }}" {% if config.supervision_state == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.supervision_state or '-' }}{% endif %}
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -108,16 +174,84 @@
         <div class="col-md-6">
             <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
                 <h6 class="fw-bold role-header-navy mb-3">Card Credentials & Prox</h6>
-                <table class="table table-dark table-sm mb-0">
+                <table class="table table-dark table-sm align-middle mb-0">
                     <tbody>
-                        <tr><td class="text-secondary">Card Type:</td><td>{{ config.card_type or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Facility Code:</td><td>{{ config.facility_code if config.facility_code is not none else '-' }}</td></tr>
-                        <tr><td class="text-secondary">Starting Badge:</td><td>{{ config.starting_badge or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Bitstream:</td><td class="text-light">{{ config.bitstream or '-' }}</td></tr>
-                        <tr><td class="text-secondary">FSK Prox:</td><td>{{ config.fsk_prox or '-' }}</td></tr>
-                        <tr><td class="text-secondary">ASK Prox:</td><td>{{ config.ask_prox or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Prox Filter:</td><td>{{ config.prox_filter or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Prox Filter Description:</td><td>{{ config.prox_filter_description or '-' }}</td></tr>
+                        <tr>
+                            <td class="text-secondary w-50">Card Type:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <input type="text" name="card_type" value="{{ config.card_type if (config.card_type and config.card_type != 'None') else '' }}" class="form-control form-control-sm bg-dark text-light border-secondary">
+                                {% else %}{{ config.card_type or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Facility Code:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <input type="number" name="facility_code" value="{{ config.facility_code if (config.facility_code is not none and config.facility_code != 'None') else '' }}" class="form-control form-control-sm bg-dark text-light border-secondary">
+                                {% else %}{{ config.facility_code if config.facility_code is not none else '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Starting Badge:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <input type="text" name="starting_badge" value="{{ config.starting_badge if (config.starting_badge and config.starting_badge != 'None') else '' }}" class="form-control form-control-sm bg-dark text-light border-secondary">
+                                {% else %}{{ config.starting_badge or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Bitstream:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <input type="text" name="bitstream" value="{{ config.bitstream if (config.bitstream and config.bitstream != 'None') else '' }}" class="form-control form-control-sm bg-dark text-light border-secondary">
+                                {% else %}{{ config.bitstream or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">FSK Prox:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="fsk_prox" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['On', 'Off'] %}
+                                            <option value="{{ opt }}" {% if config.fsk_prox == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.fsk_prox or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">ASK Prox:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="ask_prox" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['On', 'Off'] %}
+                                            <option value="{{ opt }}" {% if config.ask_prox == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.ask_prox or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Prox Filter:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="prox_filter" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['On', 'Off'] %}
+                                            <option value="{{ opt }}" {% if config.prox_filter == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.prox_filter or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Prox Filter Description:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <input type="text" name="prox_filter_description" value="{{ config.prox_filter_description if (config.prox_filter_description and config.prox_filter_description != 'None') else '' }}" class="form-control form-control-sm bg-dark text-light border-secondary">
+                                {% else %}{{ config.prox_filter_description or '-' }}{% endif %}
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -126,13 +260,68 @@
         <div class="col-md-6">
             <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
                 <h6 class="fw-bold role-header-navy mb-3">Mobile & Wireless Config</h6>
-                <table class="table table-dark table-sm mb-0">
+                <table class="table table-dark table-sm align-middle mb-0">
                     <tbody>
-                        <tr><td class="text-secondary">BLE Functionality:</td><td>{{ config.ble_functionality or '-' }}</td></tr>
-                        <tr><td class="text-secondary">NFC Functionality:</td><td>{{ config.nfc_functionality or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Mobile Keyset:</td><td>{{ config.mobile_keyset or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Legacy Credentials:</td><td>{{ config.legacy_credentials or '-' }}</td></tr>
-                        <tr><td class="text-secondary">Transport Mode:</td><td>{{ config.transport_mode or '-' }}</td></tr>
+                        <tr>
+                            <td class="text-secondary w-50">BLE Functionality:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="ble_functionality" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['WaveLynx', 'AMAG', 'Brivo', 'Fidelity', 'SafeTrust'] %}
+                                            <option value="{{ opt }}" {% if config.ble_functionality == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.ble_functionality or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">NFC Functionality:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="nfc_functionality" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['Disabled', 'Enabled'] %}
+                                            <option value="{{ opt }}" {% if config.nfc_functionality == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.nfc_functionality or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Mobile Keyset:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="mobile_keyset" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['WaveLynx Transport', 'AMAG Transport', 'Custom'] %}
+                                            <option value="{{ opt }}" {% if config.mobile_keyset == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.mobile_keyset or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Legacy Credentials:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="legacy_credentials" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['On', 'Off'] %}
+                                            <option value="{{ opt }}" {% if config.legacy_credentials == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.legacy_credentials or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">Transport Mode:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="transport_mode" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in ['On', 'Off'] %}
+                                            <option value="{{ opt }}" {% if config.transport_mode == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.transport_mode or '-' }}{% endif %}
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -141,20 +330,75 @@
         <div class="col-md-6">
             <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
                 <h6 class="fw-bold role-header-navy mb-3">CSN Protocol Configurations</h6>
-                <table class="table table-dark table-sm mb-0">
+                <table class="table table-dark table-sm align-middle mb-0">
                     <tbody>
-                        <tr><td class="text-secondary">MFC CSN:</td><td>{{ config.mfc_csn or '-' }}</td></tr>
-                        <tr><td class="text-secondary">EV1/EV2 CSN:</td><td>{{ config.ev1_ev2_csn or '-' }}</td></tr>
-                        <tr><td class="text-secondary">iClass CSN:</td><td>{{ config.iclass_csn or '-' }}</td></tr>
-                        <tr><td class="text-secondary">ISO 15693 CSN:</td><td>{{ config.iso_15693_csn or '-' }}</td></tr>
-                        <tr><td class="text-secondary">ISO 14443A CSN:</td><td>{{ config.iso_14443a_csn or '-' }}</td></tr>
+                        <tr>
+                            <td class="text-secondary w-50">MFC CSN:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="mfc_csn" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in csn_options %}
+                                            <option value="{{ opt }}" {% if config.mfc_csn == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.mfc_csn or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">EV1/EV2 CSN:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="ev1_ev2_csn" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in csn_options %}
+                                            <option value="{{ opt }}" {% if config.ev1_ev2_csn == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.ev1_ev2_csn or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">iClass CSN:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="iclass_csn" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in csn_options %}
+                                            <option value="{{ opt }}" {% if config.iclass_csn == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.iclass_csn or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">ISO 15693 CSN:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="iso_15693_csn" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in csn_options %}
+                                            <option value="{{ opt }}" {% if config.iso_15693_csn == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.iso_15693_csn or '-' }}{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary">ISO 14443A CSN:</td>
+                            <td>
+                                {% if is_editable %}
+                                    <select name="iso_14443a_csn" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                        {% for opt in csn_options %}
+                                            <option value="{{ opt }}" {% if config.iso_14443a_csn == opt %}selected{% endif %}>{{ opt }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}{{ config.iso_14443a_csn or '-' }}{% endif %}
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    {% if current_user and (current_user.role == 'SET') %}
+    {% if current_user and (current_user.role in ['SET', 'QA']) %}
         <div class="mt-5">
             <h5 class="fw-bold text-light mb-3">Revision History</h5>
             <div class="table-responsive">
@@ -184,6 +428,7 @@
         </div>
     {% endif %}
 </div>
+</form>
 
 <div class="modal fade" id="flashProgressModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-centered">

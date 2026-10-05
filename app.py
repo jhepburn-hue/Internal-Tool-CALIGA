@@ -295,5 +295,97 @@ def get_tokens(config_name):
         "firmware_token": tokens_result["firmware_token"]
     })
 
+@app.route("/configurations/<int:config_id>/toggle_status", methods=["POST"])
+def toggle_config_status(config_id):
+    user_email = session.get("user_email")
+    user = User.query.filter_by(email=user_email).first() if user_email else None
+    
+    if not user or user.role not in ["Sales", "SET"]:
+        flash("You do not have permission to change configuration statuses.", "danger")
+        return redirect(url_for("configuration_details", config_id=config_id))
+    
+    config = Configuration.query.get_or_404(config_id)
+    
+    if config.status == "POC":
+        config.previous_status = "POC"
+        config.status = "Active"
+        flash_msg = "Configuration status changed to Active."
+    elif config.status == "Active":
+        config.previous_status = "Active"
+        config.status = "POC"
+        flash_msg = "Configuration status changed to POC."
+    else:
+        flash("Sales users can only toggle between POC and Active statuses.", "warning")
+        return redirect(url_for("configuration_details", config_id=config_id))
+    
+    flash(flash_msg, "success")
+    return redirect(url_for("configuration_details", config_id=config_id))
+
+@app.route('/configurations/<config_name>/update', methods=['POST'])
+def update_configuration(config_name):
+    config = Configuration.query.filter_by(config_name=config_name).first_or_404()
+    current_user = inject_user()['current_user']
+
+    if not current_user or current_user.role not in ['Sales']:
+        flash("You do not have permission to edit configuration details.", "danger")
+        return redirect(url_for('configuration_details', config_name=config_name))
+
+    if config.status != 'POC':
+        flash("Only POC configurations can be edited.", "warning")
+        return redirect(url_for('configuration_details', config_name=config_name))
+
+    editable_fields = [
+        'idle_led', 'credential_report_led', 'beeper', 'keypad_format',
+        'tamper_monitoring', 'casi_output_format', 'supervision_state',
+        'card_type', 'facility_code', 'starting_badge', 'bitstream',
+        'fsk_prox', 'ask_prox', 'prox_filter', 'prox_filter_description',
+        'ble_functionality', 'nfc_functionality', 'mobile_keyset',
+        'legacy_credentials', 'transport_mode',
+        'mfc_csn', 'ev1_ev2_csn', 'iclass_csn', 'iso_15693_csn', 'iso_14443a_csn'
+    ]
+
+    def normalize(val):
+        """Normalizes None, 'None', empty strings, and whitespace for clean diffing."""
+        if val is None:
+            return ""
+        s = str(val).strip()
+        if s.lower() in ["none", "null", "-"]:
+            return ""
+        return s
+
+    changes = []
+    for field in editable_fields:
+        if field in request.form:
+            old_raw = getattr(config, field)
+            new_raw = request.form.get(field, "").strip()
+
+            old_norm = normalize(old_raw)
+            new_norm = normalize(new_raw)
+
+            if field in ['facility_code', 'starting_badge']:
+                new_val = int(new_raw) if new_raw.isdigit() else None
+            else:
+                new_val = new_raw if new_norm != "" else None
+
+            if old_norm != new_norm:
+                setattr(config, field, new_val)
+                disp_old = old_raw if old_raw is not None else "None"
+                disp_new = new_val if new_val is not None else "None"
+                changes.append(f"{field.replace('_', ' ').title()}: '{disp_old}' → '{disp_new}'")
+
+    if changes:
+        rev = RevisionHistory(
+            config_name=config.config_name,
+            user_email=current_user.email if current_user else "system@wavelynx.com",
+            revision_details=f"Updated configuration details: {', '.join(changes)}"
+        )
+        db.session.add(rev)
+        db.session.commit()
+        flash("Configuration updated successfully!", "success")
+    else:
+        flash("No changes detected.", "info")
+
+    return redirect(url_for('configuration_details', config_name=config_name))
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
