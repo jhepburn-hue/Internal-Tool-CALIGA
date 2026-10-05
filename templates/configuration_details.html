@@ -7,12 +7,14 @@
         <div>
             <a href="{{ url_for('configurations_list') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Configurations</a>
             
+            <h2 class="fw-bold text-light mb-2">{{ config.config_name }}</h2>
+            
             <div class="d-flex align-items-center gap-2">
                 <span class="badge bg-{{ 'success' if config.status == 'Production' else 'primary' if config.status == 'Active' else 'warning' if config.status == 'POC' else 'secondary' }} fs-6">
                     {{ config.status }}
                 </span>
 
-                {% if current_user.role in ['Sales' %}
+                {% if current_user.role in ['Sales'] %}
                     {% if config.status in ['POC', 'Active'] %}
                         <form action="{{ url_for('toggle_config_status', config_id=config.id) }}" method="POST" class="d-inline">
                             <button type="submit" class="btn btn-sm btn-outline-light fw-bold">
@@ -267,15 +269,15 @@
                 <table class="table table-dark table-sm align-middle mb-0">
                     <tbody>
                         <tr>
-                            <td class="text-secondary w-50">BLE Functionality:</td>
+                            <td class="text-secondary w-50">BLE Advertising Config:</td>
                             <td>
                                 {% if is_editable %}
-                                    <select name="ble_functionality" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    <select name="ble_advertising_config" class="form-select form-select-sm bg-dark text-light border-secondary">
                                         {% for opt in ['WaveLynx', 'AMAG', 'Brivo', 'Fidelity', 'SafeTrust'] %}
-                                            <option value="{{ opt }}" {% if config.ble_functionality == opt %}selected{% endif %}>{{ opt }}</option>
+                                            <option value="{{ opt }}" {% if config.ble_advertising_config == opt %}selected{% endif %}>{{ opt }}</option>
                                         {% endfor %}
                                     </select>
-                                {% else %}{{ config.ble_functionality or '-' }}{% endif %}
+                                {% else %}{{ config.ble_advertising_config or '-' }}{% endif %}
                             </td>
                         </tr>
                         <tr>
