@@ -1079,42 +1079,6 @@ def retest_failure(group_id):
     flash(f"Reset test suite for '{group.config_name}'. Jira ticket {target_key} moved to 'Complete' and Slack alert dispatched.", "success")
     return redirect(url_for('failures_dashboard'))
 
-@app.route('/failures/flash-and-run/<int:group_id>', methods=['POST'])
-def failure_flash_and_run(group_id):
-    current_user = inject_user()['current_user']
-    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
-
-    group = ConfigurationTestGroup.query.get_or_404(group_id)
-    fw_run = FWRun.query.get(group.fw_run_id)
-    fw_ver = fw_run.fw_version if fw_run else 'v5.4.10'
-
-    ini_content = request.form.get('ini_content', '').strip()
-    baud_rate = request.form.get('baud_rate', '115200')
-    osdp_addr = request.form.get('osdp_address', '0')
-
-    if ini_content:
-        save_edited_failure_ini(group.config_name, ini_content, fw_ver, user_email)
-
-    config_obj = Configuration.query.filter_by(config_name=group.config_name).first()
-    if not config_obj:
-        flash(f"Configuration object for '{group.config_name}' not found.", "danger")
-        return redirect(url_for('failures_dashboard'))
-
-    fw_bin_path = get_or_build_firmware_bin(config_obj, fw_ver, user_email)
-
-    if not fw_bin_path:
-        flash("Failed to retrieve or compile firmware BIN from Forge.", "danger")
-        return redirect(url_for('failures_dashboard'))
-
-    success, msg = flash_reader_osdp(fw_bin_path, baud_rate=int(baud_rate), address=int(osdp_addr))
-
-    if success:
-        flash(f"Successfully flashed reader for '{group.config_name}' with FW {fw_ver}!", "success")
-    else:
-        flash(f"OSDP Flash Failed: {msg}", "danger")
-
-    return redirect(url_for('failures_dashboard'))
-
 @app.route('/failures/save-ini/<int:group_id>', methods=['POST'])
 def save_failure_ini(group_id):
     current_user = inject_user()['current_user']
