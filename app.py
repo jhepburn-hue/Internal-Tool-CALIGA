@@ -3,7 +3,7 @@ from flask import Flask, render_template, session, request, redirect, url_for, s
 from models import db, User, Configuration, RevisionHistory
 from dotenv import load_dotenv
 from services.slack_service import send_alert_qa_notification
-from services.gcs_service import get_or_create_ini_file
+from services.gcs_service import get_or_create_ini_file, get_or_build_profile_bin
 
 load_dotenv()
 
@@ -149,6 +149,26 @@ def download_ini(config_name):
         )
 
     return f"Unable to generate or retrieve INI file for {config_name}.", 404
+
+@app.route('/configurations/<config_name>/download-profile-bin')
+def download_profile(config_name):
+    config = Configuration.query.filter_by(config_name=config_name).first_or_404()
+    
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+    
+    fw_version = request.args.get('fw_version', 'v5.4.10').strip()
+
+    file_path = get_or_build_profile_bin(config, fw_version, user_email)
+    
+    if file_path and os.path.exists(file_path):
+        return send_file(
+            file_path, 
+            as_attachment=True, 
+            download_name=f"{config.config_name}_{fw_version}.bin"
+        )
+
+    return f"Profile BIN file for {config_name} could not be found or built within 60s.", 504
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

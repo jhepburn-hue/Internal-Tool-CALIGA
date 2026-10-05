@@ -1,30 +1,44 @@
 import os
+import time
 from google.cloud import storage
 from services.ini_generator import generate_ini_from_config
+from services.forge_service import trigger_forge_build
 
 GCP_PROJECT_ID = os.getenv('GCP_PROJECT_ID', 'erebus-257721')
 GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', 'wavelynx_apex_config')
 
 def get_gcs_client():
-    """Initializes GCS client using Application Default Credentials (ADC) or explicit credentials if file exists."""
     creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-    
     if creds_path and not os.path.exists(creds_path):
         del os.environ['GOOGLE_APPLICATION_CREDENTIALS']
 
     try:
         return storage.Client(project=GCP_PROJECT_ID)
     except Exception as e:
-        print(f"[GCS SERVICE] Warning: Couldn't initialize GCS client ({e}). Running in fallback mode.")
+        print(f"[GCS SERVICE] Warning: Couldn't initialize GCS client ({e}).")
         return None
 
+def find_latest_matching_blob(bucket, prefix, filename_targets):
+    """
+    Searches GCS under `prefix` (including subdirectories like output/v5.4.10/YYYYMMDD_HHMMSS_.../)
+    for target filenames and returns the newest blob based on creation time.
+    """
+    blobs = list(bucket.list_blobs(prefix=prefix))
+    matching_blobs = []
+
+    for blob in blobs:
+        blob_name = blob.name
+        for target in filename_targets:
+            if blob_name.endswith(f"/{target}") or blob_name == target:
+                matching_blobs.append(blob)
+
+    if not matching_blobs:
+        return None
+
+    matching_blobs.sort(key=lambda b: b.time_created, reverse=True)
+    return matching_blobs[0]
+
 def get_or_create_ini_file(config, fw_version, user_email, output_dir="downloads"):
-    """
-    1. Searches Input Bucket: input/{fw_version}/{config_name}.ini
-    2. Searches Fallback Input Bucket (without 'v' prefix if needed)
-    3. Searches Forge Bucket: forge/{user_email}/{fw_version}/{config_name}.ini
-    4. If NOT found anywhere, generates INI from DB and uploads to Forge Bucket.
-    """
     file_name = f"{config.config_name}.ini"
     local_path = os.path.join(output_dir, file_name)
     os.makedirs(output_dir, exist_ok=True)
@@ -33,11 +47,11 @@ def get_or_create_ini_file(config, fw_version, user_email, output_dir="downloads
     ver_with_v = clean_ver if clean_ver.startswith('v') else f"v{clean_ver}"
     ver_no_v = clean_ver.lstrip('v')
 
-    candidate_paths = [
-        f"input/{ver_with_v}/{file_name}",
-        f"input/{ver_no_v}/{file_name}",
-        f"forge/{user_email}/{ver_with_v}/{file_name}",
-        f"forge/{user_email}/{ver_no_v}/{file_name}",
+    candidate_prefixes = [
+        f"input/{ver_with_v}/",
+        f"input/{ver_no_v}/",
+        f"forge/{user_email}/{ver_with_v}/",
+        f"forge/{user_email}/{ver_no_v}/",
     ]
 
     client = get_gcs_client()
@@ -45,14 +59,12 @@ def get_or_create_ini_file(config, fw_version, user_email, output_dir="downloads
     if client:
         try:
             bucket = client.bucket(GCS_BUCKET_NAME)
-            for path in candidate_paths:
-                blob = bucket.blob(path)
-                if blob.exists():
+            for prefix in candidate_prefixes:
+                blob = find_latest_matching_blob(bucket, prefix, [file_name])
+                if blob:
                     blob.download_to_filename(local_path)
-                    print(f"[GCS SERVICE] SUCCESS: Found and downloaded from GCS -> gs://{GCS_BUCKET_NAME}/{path}")
+                    print(f"[GCS SERVICE] SUCCESS: Found and downloaded INI -> gs://{GCS_BUCKET_NAME}/{blob.name}")
                     return local_path
-                else:
-                    print(f"[GCS SERVICE] Checked path (not found): gs://{GCS_BUCKET_NAME}/{path}")
         except Exception as e:
             print(f"[GCS SERVICE] Exception checking bucket: {e}")
 
@@ -70,3 +82,68 @@ def get_or_create_ini_file(config, fw_version, user_email, output_dir="downloads
             print(f"[GCS SERVICE] Could not upload to Forge bucket: {e}")
 
     return local_path
+
+def get_or_build_profile_bin(config, fw_version, user_email, output_dir="downloads", timeout_seconds=60):
+    """
+    Downloads profile .bin file if it exists in GCS output/ (including timestamp folders) or forge/.
+    If missing, ensures .ini is in Forge bucket, triggers Forge build,
+    and polls GCS for up to 60 seconds until the .bin file lands.
+    """
+    clean_ver = fw_version.strip()
+    ver_with_v = clean_ver if clean_ver.startswith('v') else f"v{clean_ver}"
+    ver_no_v = clean_ver.lstrip('v')
+    
+    config_name = config.config_name
+    local_path = os.path.join(output_dir, f"{config_name}_{ver_with_v}.bin")
+    os.makedirs(output_dir, exist_ok=True)
+
+    bin_targets = [
+        f"{config_name}.bin",
+        f"{config_name}_profile.bin",
+        f"{config_name}.BIN",
+        f"{config_name}_profile.BIN",
+    ]
+
+    versions = [ver_with_v, ver_no_v]
+    output_prefixes = [f"output/{v}/" for v in versions]
+    forge_prefixes = [f"forge/{user_email}/{v}/" for v in versions]
+
+    client = get_gcs_client()
+
+    if client:
+        bucket = client.bucket(GCS_BUCKET_NAME)
+
+        for prefix in output_prefixes:
+            blob = find_latest_matching_blob(bucket, prefix, bin_targets)
+            if blob:
+                blob.download_to_filename(local_path)
+                print(f"[GCS SERVICE] SUCCESS: Found Profile BIN in Output Bucket -> gs://{GCS_BUCKET_NAME}/{blob.name}")
+                return local_path
+
+        for prefix in forge_prefixes:
+            blob = find_latest_matching_blob(bucket, prefix, bin_targets)
+            if blob:
+                blob.download_to_filename(local_path)
+                print(f"[GCS SERVICE] SUCCESS: Found Profile BIN in Forge Bucket -> gs://{GCS_BUCKET_NAME}/{blob.name}")
+                return local_path
+
+    ini_path = get_or_create_ini_file(config, ver_with_v, user_email, output_dir)
+
+    trigger_forge_build(config.config_name, ver_with_v, source="user")
+
+    if client:
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        start_time = time.time()
+        print(f"[GCS SERVICE] Polling GCS for {config.config_name} BIN file in Forge (up to {timeout_seconds}s)...")
+
+        while time.time() - start_time < timeout_seconds:
+            for prefix in forge_prefixes:
+                blob = find_latest_matching_blob(bucket, prefix, bin_targets)
+                if blob:
+                    blob.download_to_filename(local_path)
+                    print(f"[GCS SERVICE] SUCCESS: BIN file landed in Forge Bucket -> gs://{GCS_BUCKET_NAME}/{blob.name}")
+                    return local_path
+            time.sleep(3)
+
+    print(f"[GCS SERVICE] Timed out waiting for {config.config_name} BIN file from Forge.")
+    return None

@@ -61,7 +61,11 @@
                        class="btn btn-sm btn-outline-secondary text-light border-secondary">
                         Download INI
                     </a>
-                    <a href="#" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Profile Bin</a>
+                    <a id="btn-download-profile" 
+                    href="{{ url_for('download_profile', config_name=config.config_name, fw_version='v5.4.10') }}" 
+                    class="btn btn-sm btn-outline-secondary text-light border-secondary">
+                        Download Profile Bin
+                    </a>
                     <a href="#" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Firmware Bin</a>
                     <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Flash Configuration</button>
                     <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Get Tokens</button>
@@ -167,4 +171,28 @@
         </div>
     {% endif %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const fwSelect = document.getElementById('fw_version_select');
+    const iniBtn = document.getElementById('btn-download-ini');
+    const profileBtn = document.getElementById('btn-download-profile');
+    const firmwareBtn = document.getElementById('btn-download-firmware');
+
+    function updateActionUrls() {
+        const fw = fwSelect.value;
+        if (iniBtn) {
+            iniBtn.href = "{{ url_for('download_ini', config_name=config.config_name) }}?fw_version=" + fw;
+        }
+        if (profileBtn) {
+            profileBtn.href = "{{ url_for('download_profile', config_name=config.config_name) }}?fw_version=" + fw;
+        }
+    }
+
+    if (fwSelect) {
+        fwSelect.addEventListener('change', updateActionUrls);
+        updateActionUrls();
+    }
+});
+</script>
 {% endblock %}
