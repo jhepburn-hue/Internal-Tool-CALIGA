@@ -71,7 +71,11 @@
                     class="btn btn-sm btn-outline-secondary text-light border-secondary">
                         Download Firmware Bin
                     </a>
-                    <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Flash Configuration</button>
+                    <a id="btn-flash-config" 
+                    href="{{ url_for('flash_configuration', config_name=config.config_name, fw_version='v5.4.10') }}" 
+                    class="btn btn-sm btn-outline-secondary text-light border-secondary">
+                        Flash Configuration
+                    </a>
                     <button class="btn btn-sm btn-outline-secondary text-light border-secondary">Get Tokens</button>
                 </div>
             {% endif %}
@@ -176,6 +180,33 @@
     {% endif %}
 </div>
 
+<div class="modal fade" id="flashProgressModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title fw-bold">OSDP Firmware Flashing</h5>
+            </div>
+            <div class="modal-body text-center p-4">
+                <div id="flash-status-text" class="mb-3 text-secondary">Initializing RS-485 port...</div>
+                
+                <div class="progress bg-secondary mb-3" style="height: 24px;">
+                    <div id="flash-progress-bar" 
+                         class="progress-bar progress-bar-striped progress-bar-animated bg-warning text-dark fw-bold" 
+                         role="progressbar" style="width: 0%;">0%</div>
+                </div>
+
+                <div id="reboot-alert" class="alert alert-info d-none mb-0" role="alert">
+                    <i class="bi bi-arrow-repeat spin me-2"></i>
+                    <strong>Reader is rebooting!</strong> Please wait until reboot is complete.
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button id="btn-close-flash-modal" type="button" class="btn btn-sm btn-secondary d-none" onclick="window.location.reload();">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const fwSelect = document.getElementById('fw_version_select');
@@ -199,6 +230,81 @@ document.addEventListener('DOMContentLoaded', function() {
     if (fwSelect) {
         fwSelect.addEventListener('change', updateActionUrls);
         updateActionUrls();
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    const flashBtn = document.getElementById('btn-flash-config');
+    const fwSelect = document.getElementById('fw_version_select');
+
+    if (flashBtn) {
+        flashBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const selectedFw = fwSelect ? fwSelect.value : 'v5.4.10';
+
+            fetch("{{ url_for('check_rs485', config_name=config.config_name) }}")
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.connected) {
+                        alert("RS-485 Port Not Found!\n\n" + data.error);
+                        return;
+                    }
+
+                    const modal = new bootstrap.Modal(document.getElementById('flashProgressModal'));
+                    const statusText = document.getElementById('flash-status-text');
+                    const progressBar = document.getElementById('flash-progress-bar');
+                    const rebootAlert = document.getElementById('reboot-alert');
+                    const closeBtn = document.getElementById('btn-close-flash-modal');
+
+                    statusText.innerText = "Discovering reader & elevating baud rate to 115200...";
+                    progressBar.style.width = "0%";
+                    progressBar.innerText = "0%";
+                    rebootAlert.classList.add('d-none');
+                    closeBtn.classList.add('d-none');
+                    modal.show();
+
+                    const streamUrl = "{{ url_for('flash_stream', config_name=config.config_name) }}?fw_version=" + selectedFw;
+                    const eventSource = new EventSource(streamUrl);
+
+                    eventSource.onmessage = function(event) {
+                        const payload = JSON.parse(event.data);
+
+                        if (payload.type === 'status') {
+                            statusText.innerText = payload.text;
+                        } else if (payload.type === 'progress') {
+                            const p = payload.percent;
+                            progressBar.style.width = p + "%";
+                            progressBar.innerText = p + "%";
+                            statusText.innerText = `Transferring firmware... (${p}%)`;
+                        } else if (payload.type === 'complete') {
+                            eventSource.close();
+                            progressBar.style.width = "100%";
+                            progressBar.innerText = "100%";
+                            progressBar.classList.remove('bg-warning', 'progress-bar-animated');
+                            progressBar.classList.add('bg-success');
+
+                            if (payload.success) {
+                                statusText.innerText = "Firmware Transfer Complete!";
+                                rebootAlert.classList.remove('d-none');
+                            } else {
+                                statusText.innerText = "Flashing Failed: " + payload.msg;
+                                progressBar.classList.remove('bg-success');
+                                progressBar.classList.add('bg-danger');
+                            }
+                            closeBtn.classList.remove('d-none');
+                        }
+                    };
+
+                    eventSource.onerror = function() {
+                        eventSource.close();
+                        statusText.innerText = "Connection lost during flashing.";
+                        closeBtn.classList.remove('d-none');
+                    };
+                })
+                .catch(err => {
+                    alert("Error checking RS-485 port connection.");
+                });
+        });
     }
 });
 </script>

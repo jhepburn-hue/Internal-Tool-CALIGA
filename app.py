@@ -1,9 +1,11 @@
 import os
-from flask import Flask, render_template, session, request, redirect, url_for, send_file, request
+import time
+from flask import Flask, render_template, session, request, redirect, url_for, send_file, request, Response, stream_with_context, jsonify, flash, json
 from models import db, User, Configuration, RevisionHistory
 from dotenv import load_dotenv
 from services.slack_service import send_alert_qa_notification
 from services.gcs_service import get_or_create_ini_file, get_or_build_profile_bin, get_or_build_firmware_bin
+from services.osdp_service import flash_firmware_osdp, find_rs485_port
 
 load_dotenv()
 
@@ -189,6 +191,89 @@ def download_firmware(config_name):
         )
 
     return f"Firmware BIN file for {config_name} ({fw_version}) could not be found or built within 60s.", 504
+
+@app.route('/configurations/<config_name>/check-rs485', endpoint='check_rs485')
+def check_rs485(config_name):
+    port = find_rs485_port()
+    if port:
+        return jsonify({"connected": True, "port": port})
+    return jsonify({"connected": False, "error": "No RS-485 port found. Please connect your RS-485 adapter."}), 404
+
+@app.route('/configurations/<config_name>/flash-stream', endpoint='flash_stream')
+def flash_stream(config_name):
+    config = Configuration.query.filter_by(config_name=config_name).first_or_404()
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+    fw_version = request.args.get('fw_version', 'v5.4.10').strip()
+
+    def generate_events():
+        progress_queue = []
+
+        def progress_cb(percent):
+            progress_queue.append(percent)
+
+        yield f"data: {json.dumps({'type': 'status', 'text': 'Retrieved firmware. Connecting to RS-485 port...'})}\n\n"
+
+        import threading
+        result_holder = {}
+
+        def run_flash():
+            success, msg = flash_firmware_osdp(config, fw_version, user_email, progress_callback=progress_cb)
+            result_holder['success'] = success
+            result_holder['msg'] = msg
+
+        thread = threading.Thread(target=run_flash)
+        thread.start()
+
+        last_percent = 0
+        while thread.is_alive() or progress_queue:
+            if progress_queue:
+                p = progress_queue.pop(0)
+                if p != last_percent:
+                    last_percent = p
+                    yield f"data: {json.dumps({'type': 'progress', 'percent': p})}\n\n"
+            time.sleep(0.05)
+
+        thread.join()
+
+        success = result_holder.get('success', False)
+        msg = result_holder.get('msg', 'Flashing failed.')
+
+        try:
+            rev = RevisionHistory(
+                config_name=config.config_name,
+                user_email=user_email,
+                revision_details=f"OSDP Flash ({fw_version}). Result: {'Success' if success else 'Failed'} - {msg}"
+            )
+            db.session.add(rev)
+            db.session.commit()
+        except Exception as e:
+            print(f"[REVISION LOG ERROR] {e}")
+
+        yield f"data: {json.dumps({'type': 'complete', 'success': success, 'msg': msg})}\n\n"
+
+    return Response(stream_with_context(generate_events()), mimetype='text/event-stream')
+
+@app.route('/configurations/<config_name>/flash', endpoint='flash_configuration')
+def flash_configuration(config_name):
+    config = Configuration.query.filter_by(config_name=config_name).first_or_404()
+    
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+    fw_version = request.args.get('fw_version', 'v5.4.10').strip()
+
+    if not find_rs485_port():
+        flash("No RS-485 port found on host system. Please connect an RS-485 serial adapter.", "error")
+        return redirect(url_for('configuration_details', config_name=config_name))
+
+    success, message = flash_firmware_osdp(config, fw_version, user_email)
+
+    if success:
+        flash(f"{message}", "success")
+    else:
+        flash(f"OSDP Flash Failed: {message}", "error")
+
+    return redirect(url_for('configuration_details', config_name=config_name))
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
