@@ -1183,7 +1183,7 @@ def archive_configuration(config_name):
     user_email = current_user.email if current_user else "sales@wavelynx.com"
     user_role = current_user.role if current_user else "Sales"
 
-    if user_role not in ['Sales', 'SET']:
+    if user_role not in ['Sales']:
         flash("You do not have permission to archive configurations.", "danger")
         return redirect(url_for('configuration_details', config_name=config_name))
 

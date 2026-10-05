@@ -12,7 +12,7 @@
                     {{ config.status }}
                 </span>
 
-                {% if current_user.role in ['Sales', 'SET'] %}
+                {% if current_user.role in ['Sales' %}
                     {% if config.status in ['POC', 'Active'] %}
                         <form action="{{ url_for('toggle_config_status', config_id=config.id) }}" method="POST" class="d-inline">
                             <button type="submit" class="btn btn-sm btn-outline-light fw-bold">
