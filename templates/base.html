@@ -59,7 +59,13 @@
                             Testing
                         </a>
                     </li>
-                    <li class="nav-item"><a class="nav-link" href="#">Failures</a></li>
+                    {% if current_user and current_user.role == 'SET' %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'failures_dashboard' %}active{% endif %}" href="{{ url_for('failures_dashboard') }}">
+                            Failures
+                        </a>
+                    </li>
+                    {% endif %}
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('tools') }}">Tools</a></li>
                 </ul>
                 

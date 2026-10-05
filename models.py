@@ -120,7 +120,9 @@ class ConfigurationTestGroup(db.Model):
     fw_run_id = db.Column(db.Integer, db.ForeignKey('fw_runs.id'), nullable=False)
     config_name = db.Column(db.String(100), nullable=False)
     assigned_user = db.Column(db.String(120), nullable=True) # User email or name
+    claimed_user = db.Column(db.String(120), nullable=True) # User email or name
     status = db.Column(db.String(20), default='Untested') # 'Untested', 'In Progress', 'Passed', 'Failed'
+    jira_key = db.Column(db.String(50), nullable=True)
     
     test_cases = db.relationship('TestCase', backref='test_group', cascade="all, delete-orphan")
 

@@ -238,3 +238,58 @@ def upload_partial_ini_to_gcs(ini_filename, ini_content, fw_version, user_email)
     except Exception as e:
         print(f"[GCS UPLOAD ERROR] Failed to upload partial INI: {e}")
         return None
+
+def get_failure_ini_content(config_name, fw_version, user_email):
+    """
+    Reads the INI content for a configuration.
+    Checks forge/ user directory first; falls back to master input/ bucket.
+    """
+    clean_ver = fw_version.strip()
+    ver_with_v = clean_ver if clean_ver.startswith('v') else f"v{clean_ver}"
+    file_name = f"{config_name}.ini"
+
+    candidate_prefixes = [
+        f"forge/{user_email}/{ver_with_v}/",
+        f"input/{ver_with_v}/"
+    ]
+
+    client = get_gcs_client()
+    if client:
+        try:
+            bucket = client.bucket(GCS_BUCKET_NAME)
+            for prefix in candidate_prefixes:
+                blob = find_latest_matching_blob(bucket, prefix, [file_name])
+                if blob:
+                    content = blob.download_as_text()
+                    print(f"[GCS SERVICE] Read INI for failure edit -> gs://{GCS_BUCKET_NAME}/{blob.name}")
+                    return content
+        except Exception as e:
+            print(f"[GCS SERVICE] Exception reading failure INI: {e}")
+
+    return f"; Default generated INI for {config_name}\n[general]\nconfig_name = {config_name}\n"
+
+
+def save_edited_failure_ini(config_name, ini_content, fw_version, user_email):
+    """
+    Saves an edited failure INI into the user's Forge bucket:
+    forge/{user_email}/{fw_version}/{config_name}.ini
+    """
+    client = get_gcs_client()
+    if not client:
+        print("[GCS ERROR] GCS client unavailable for saving edited INI.")
+        return False
+
+    clean_ver = fw_version.strip()
+    ver_with_v = clean_ver if clean_ver.startswith('v') else f"v{clean_ver}"
+    file_name = f"{config_name}.ini"
+    gcs_path = f"forge/{user_email}/{ver_with_v}/{file_name}"
+
+    try:
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        blob = bucket.blob(gcs_path)
+        blob.upload_from_string(ini_content, content_type="text/plain")
+        print(f"[GCS SUCCESS] Saved edited failure INI -> gs://{GCS_BUCKET_NAME}/{gcs_path}")
+        return True
+    except Exception as e:
+        print(f"[GCS ERROR] Failed to upload edited INI: {e}")
+        return False

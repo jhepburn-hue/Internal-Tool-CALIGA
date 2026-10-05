@@ -8,12 +8,13 @@ from flask import Flask, render_template, session, request, redirect, url_for, s
 from models import db, User, Configuration, RevisionHistory, FWRun, ConfigurationTestGroup, TestCase
 from dotenv import load_dotenv
 from services.slack_service import send_alert_qa_notification, send_failure_message
-from services.gcs_service import get_or_create_ini_file, get_or_build_profile_bin, get_or_build_firmware_bin, upload_partial_ini_to_gcs
+from services.gcs_service import get_or_create_ini_file, get_or_build_profile_bin, get_or_build_firmware_bin, upload_partial_ini_to_gcs, get_failure_ini_content, save_edited_failure_ini
 from services.osdp_service import flash_firmware_osdp, find_rs485_port
 from services.pocketbase_service import process_get_tokens
 from services.ini_translator_service import translate_uploaded_ini
 from services.forge_service import generate_partial_ini_content, compile_partial_bin_via_forge
-from services.jira_service import create_failure_ticket
+from services.jira_service import create_failure_ticket, assign_jira_ticket, transition_jira_issue_to_complete
+from services.osdp_service import flash_reader_osdp
 
 load_dotenv()
 
@@ -986,12 +987,14 @@ def submit_test_group(group_id):
 
         if config_obj and config_obj.status == 'Production':
             config_obj.status = config_obj.previous_status or 'Active'
-            flash(f"Production config '{config_obj.config_name}' failed testing! Reverted status to {config_obj.status}.", "warning")
 
         crit_details = ", ".join([f"{c.criterion_name} ({c.comment})" for c in failed_cases])
-        create_failure_ticket(group.config_name, user_email, fw_run.fw_version, crit_details)
+        
+        created_key = create_failure_ticket(group.config_name, user_email, fw_run.fw_version, crit_details)
+        group.jira_key = created_key
+        
         send_failure_message(group.config_name, user_email, fw_run.fw_version, crit_details)
-        flash(f"Test group '{group.config_name}' marked as FAILED. Jira ticket created and Slack alert sent.", "danger")
+        flash(f"Test group '{group.config_name}' marked as FAILED. Jira ticket {created_key} created.", "danger")
 
     else:
         group.status = 'Passed'
@@ -1004,6 +1007,171 @@ def submit_test_group(group_id):
 
     db.session.commit()
     return redirect(url_for('testing_dashboard', fw_version=fw_run.fw_version))
+
+@app.route('/failures', methods=['GET'], strict_slashes=False)
+def failures_dashboard():
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+    
+    if not current_user or current_user.role != 'SET':
+        flash("Access Restricted: The Failures dashboard is only accessible to SET team members.", "danger")
+        return redirect(url_for('home'))
+
+    failed_groups = ConfigurationTestGroup.query.filter_by(status='Failed').order_by(ConfigurationTestGroup.id.desc()).all()
+
+    failures_data = []
+    for group in failed_groups:
+        fw_run = db.session.get(FWRun, group.fw_run_id)
+        failed_cases = [tc for tc in group.test_cases if tc.status == 'Failed']
+        
+        fw_ver = fw_run.fw_version if fw_run else 'v5.4.10'
+        ini_content = get_failure_ini_content(group.config_name, fw_ver, user_email)
+
+        failures_data.append({
+            'group_id': group.id,
+            'config_name': group.config_name,
+            'fw_version': fw_ver,
+            'run_date': fw_run.run_date if fw_run else None,
+            'tester_user': group.assigned_user,
+            'claimed_user': group.claimed_user, 
+            'failed_cases': failed_cases,
+            'failure_count': len(failed_cases),
+            'jira_key': f"SWAG-{group.id + 100}",
+            'ini_content': ini_content
+        })
+
+    return render_template(
+        'failures.html',
+        failures=failures_data,
+        total_failures=len(failures_data)
+    )
+
+@app.route('/failures/retest/<int:group_id>', methods=['POST'])
+def retest_failure(group_id):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+
+    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    fw_run = db.session.get(FWRun, group.fw_run_id)
+    fw_ver = fw_run.fw_version if fw_run else 'v5.4.10'
+
+    target_key = group.jira_key or "SWAG-126"
+
+    group.status = 'Untested'
+    group.assigned_user = None
+    group.claimed_user = None
+
+    for tc in group.test_cases:
+        tc.status = 'Untested'
+        tc.comment = None
+
+    db.session.commit()
+
+    transition_jira_issue_to_complete(target_key)
+
+    send_alert_qa_notification(group.config_name, "Re-Testing Requested", user_email, fw_ver)
+
+    flash(f"Reset test suite for '{group.config_name}'. Jira ticket {target_key} moved to 'Complete' and Slack alert dispatched.", "success")
+    return redirect(url_for('failures_dashboard'))
+
+@app.route('/failures/flash-and-run/<int:group_id>', methods=['POST'])
+def failure_flash_and_run(group_id):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+
+    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    fw_run = FWRun.query.get(group.fw_run_id)
+    fw_ver = fw_run.fw_version if fw_run else 'v5.4.10'
+
+    ini_content = request.form.get('ini_content', '').strip()
+    baud_rate = request.form.get('baud_rate', '115200')
+    osdp_addr = request.form.get('osdp_address', '0')
+
+    if ini_content:
+        save_edited_failure_ini(group.config_name, ini_content, fw_ver, user_email)
+
+    config_obj = Configuration.query.filter_by(config_name=group.config_name).first()
+    if not config_obj:
+        flash(f"Configuration object for '{group.config_name}' not found.", "danger")
+        return redirect(url_for('failures_dashboard'))
+
+    fw_bin_path = get_or_build_firmware_bin(config_obj, fw_ver, user_email)
+
+    if not fw_bin_path:
+        flash("Failed to retrieve or compile firmware BIN from Forge.", "danger")
+        return redirect(url_for('failures_dashboard'))
+
+    success, msg = flash_reader_osdp(fw_bin_path, baud_rate=int(baud_rate), address=int(osdp_addr))
+
+    if success:
+        flash(f"Successfully flashed reader for '{group.config_name}' with FW {fw_ver}!", "success")
+    else:
+        flash(f"OSDP Flash Failed: {msg}", "danger")
+
+    return redirect(url_for('failures_dashboard'))
+
+@app.route('/failures/save-ini/<int:group_id>', methods=['POST'])
+def save_failure_ini(group_id):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+
+    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    fw_run = FWRun.query.get(group.fw_run_id)
+    fw_ver = fw_run.fw_version if fw_run else 'v5.4.10'
+
+    edited_ini = request.form.get('ini_content', '').strip()
+
+    if not edited_ini:
+        flash("INI content cannot be empty.", "warning")
+        return redirect(url_for('failures_dashboard'))
+
+    success = save_edited_failure_ini(group.config_name, edited_ini, fw_ver, user_email)
+
+    if success:
+        flash(f"Updated INI for '{group.config_name}' saved to Forge bucket (`forge/{user_email}/{fw_ver}/`)!", "success")
+    else:
+        flash("Failed to save edited INI to Cloud Storage.", "danger")
+
+    return redirect(url_for('failures_dashboard'))
+
+@app.route('/failures/claim/<int:group_id>', methods=['POST'])
+def claim_failure(group_id):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+
+    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    group.claimed_user = user_email
+    db.session.commit()
+
+    target_key = group.jira_key or "SWAG-126"
+    jira_assigned = assign_jira_ticket(issue_key=target_key, assignee_email=user_email)
+
+    if jira_assigned:
+        flash(f"Claimed failure for '{group.config_name}' and assigned Jira ticket {target_key} to {user_email}.", "success")
+    else:
+        flash(f"Claimed failure locally for '{group.config_name}', but could not update Jira ticket assignment.", "warning")
+
+    return redirect(url_for('failures_dashboard'))
+
+@app.route('/failures/unclaim/<int:group_id>', methods=['POST'])
+def unclaim_failure(group_id):
+    current_user = inject_user()['current_user']
+    user_email = current_user.email if current_user else "jhepburn@wavelynx.com"
+
+    group = ConfigurationTestGroup.query.get_or_404(group_id)
+
+    if group.claimed_user == user_email:
+        group.claimed_user = None
+        db.session.commit()
+
+        target_key = group.jira_key or "SWAG-126"
+        assign_jira_ticket(issue_key=target_key, assignee_email=None)
+
+        flash(f"Unclaimed failure for '{group.config_name}' and unassigned Jira ticket {target_key}.", "info")
+    else:
+        flash("You can only unclaim failures that you currently own.", "warning")
+
+    return redirect(url_for('failures_dashboard'))
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

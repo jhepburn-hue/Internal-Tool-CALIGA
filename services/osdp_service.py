@@ -100,3 +100,33 @@ def flash_firmware_osdp(config, fw_version, user_email, progress_callback=None):
     except Exception as e:
         print(f"[OSDP SERVICE] Exception during OSDP Flash: {e}")
         return False, f"Communication error: {str(e)}"
+
+def flash_reader_osdp(firmware_bin_path, baud_rate=115200, address=0):
+    """
+    Flashes a reader over OSDP using a direct binary file path.
+    """
+    port_path = find_rs485_port()
+    if not port_path:
+        return False, "No RS-485 port found. Please connect your RS-485 serial adapter to proceed."
+
+    if not os.path.exists(firmware_bin_path):
+        return False, f"Firmware binary file at '{firmware_bin_path}' could not be found."
+
+    try:
+        ser = serial.Serial(port_path, baudrate=baud_rate, timeout=2.0)
+        conductor = OsdpTrafficConductor(ser, device_address=address, use_crc=True)
+
+        print(f"[OSDP SERVICE] Flashing {firmware_bin_path} over OSDP (Port: {port_path}, Baud: {baud_rate}, Addr: {address})...")
+        ack_reply = conductor.conduct_file_transfer(
+            file_path=firmware_bin_path,
+            file_fragment_size=1024
+        )
+        ser.close()
+
+        msg = "Flashing complete. Reader is now rebooting."
+        print(f"[OSDP SERVICE] SUCCESS: {msg}")
+        return True, msg
+
+    except Exception as e:
+        print(f"[OSDP SERVICE] Exception during OSDP Flash: {e}")
+        return False, f"Communication error: {str(e)}"
