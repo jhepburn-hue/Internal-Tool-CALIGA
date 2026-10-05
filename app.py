@@ -405,8 +405,8 @@ def update_configuration(config_name):
         'tamper_monitoring', 'casi_output_format', 'supervision_state',
         'card_type', 'facility_code', 'starting_badge', 'bitstream',
         'fsk_prox', 'ask_prox', 'prox_filter', 'prox_filter_description',
-        'ble_advertising_config', 'nfc_functionality', 'mobile_keyset',
-        'legacy_credentials', 'transport_mode',
+        'ble_advertising_config', 'ble_functionality', 'nfc_functionality', 
+        'mobile_keyset', 'legacy_credentials', 'transport_mode',
         'mfc_csn', 'ev1_ev2_csn', 'iclass_csn', 'iso_15693_csn', 'iso_14443a_csn'
     ]
 
@@ -521,6 +521,7 @@ def create_configuration():
         prox_filter=request.form.get('prox_filter'),
         prox_filter_description=request.form.get('prox_filter_description') or None,
         ble_advertising_config=request.form.get('ble_advertising_config'),
+        ble_functionality=request.form.get('ble_functionality'),
         nfc_functionality=request.form.get('nfc_functionality'),
         mobile_keyset=request.form.get('mobile_keyset'),
         legacy_credentials=request.form.get('legacy_credentials'),

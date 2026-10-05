@@ -194,6 +194,16 @@
                             </td>
                         </tr>
                         <tr>
+                            <td class="text-secondary">BLE Functionality:</td>
+                            <td>
+                                <select name="ble_functionality" class="form-select form-select-sm bg-dark text-light border-secondary">
+                                    {% for opt in ['Disabled', 'Admin + Credentials', 'Credentials Only', 'Admin Only'] %}
+                                        <option value="{{ opt }}">{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
                             <td class="text-secondary">NFC Functionality:</td>
                             <td>
                                 <select name="nfc_functionality" class="form-select form-select-sm bg-dark text-light border-secondary">

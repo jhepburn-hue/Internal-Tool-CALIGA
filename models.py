@@ -72,6 +72,7 @@ class Configuration(db.Model):
     prox_filter_description = db.Column(db.Text, nullable=True)
 
     ble_advertising_config = db.Column(db.String(100), nullable=True)
+    ble_functionality = db.Column(db.String(100), nullable=True)
     nfc_functionality = db.Column(db.Text, nullable=True)
     mobile_keyset = db.Column(db.Text, nullable=True)
     legacy_credentials = db.Column(db.Text, nullable=True)
