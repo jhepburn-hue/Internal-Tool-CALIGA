@@ -1,4 +1,5 @@
 venv/
+.venv/
 env/
 ENV/
 
@@ -9,5 +10,8 @@ __pycache__/
 .env
 
 temp_test/
+downloads/
 *.zip
 *.log
+
+.DS_Store

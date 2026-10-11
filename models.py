@@ -1,7 +1,13 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
+
+
+def utcnow():
+    """Naive UTC timestamp. The DateTime columns are 'timestamp without time zone'."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -22,7 +28,7 @@ class Configuration(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     config_name = db.Column(db.String(100), unique=True, nullable=False)
     config_id_hex = db.Column(db.Text, nullable=True)
-    config_id_dec = db.Column(db.Text, nullable=True)
+    config_id_dec = db.Column(db.Integer, index=True, nullable=True) # Not unique: some legacy configs share an ID
     status = db.Column(db.String(50), nullable=False, default='Active')
     previous_status = db.Column(db.String(50), nullable=True)
 
@@ -82,14 +88,14 @@ class Configuration(db.Model):
     assigned_part_numbers = db.Column(db.Text, nullable=True)
     card_type = db.Column(db.Text, nullable=True)
     bitstream = db.Column(db.Text, nullable=True)
-    facility_code = db.Column(db.Integer, nullable=True)  
+    facility_code = db.Column(db.Integer, nullable=True)
     starting_badge = db.Column(db.Text, nullable=True)
     card_notes = db.Column(db.Text, nullable=True)
     card_part_numbers = db.Column(db.Text, nullable=True)
     notes_other_products = db.Column(db.Text, nullable=True)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
     revisions = db.relationship('RevisionHistory', backref='configuration', lazy=True, cascade="all, delete-orphan")
 
@@ -99,7 +105,7 @@ class RevisionHistory(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     config_name = db.Column(db.String(100), db.ForeignKey('configurations.config_name'), nullable=False)
-    revision_date = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    revision_date = db.Column(db.DateTime, default=utcnow, nullable=False)
     user_email = db.Column(db.String(150), nullable=False)
     revision_details = db.Column(db.Text, nullable=False)
 
@@ -108,42 +114,76 @@ class FWRun(db.Model):
     __tablename__ = 'fw_runs'
     id = db.Column(db.Integer, primary_key=True)
     fw_version = db.Column(db.String(20), nullable=False) # 'v5.4.10' or 'v5.4.11'
-    run_date = db.Column(db.DateTime, default=datetime.utcnow)
-    passed_total = db.Column(db.Integer, default=0)
-    failed_total = db.Column(db.Integer, default=0)
-    
+    run_date = db.Column(db.DateTime, default=utcnow)
+
     test_groups = db.relationship('ConfigurationTestGroup', backref='fw_run', cascade="all, delete-orphan")
+
+    # Totals are calculated from group statuses so re-tests can't make them drift.
+    @property
+    def passed_total(self):
+        return sum(1 for g in self.test_groups if g.status == 'Passed')
+
+    @property
+    def failed_total(self):
+        return sum(1 for g in self.test_groups if g.status == 'Failed')
+
 
 class ConfigurationTestGroup(db.Model):
     __tablename__ = 'configuration_test_groups'
     id = db.Column(db.Integer, primary_key=True)
     fw_run_id = db.Column(db.Integer, db.ForeignKey('fw_runs.id'), nullable=False)
+    configuration_id = db.Column(db.Integer, db.ForeignKey('configurations.id'), nullable=True)
     config_name = db.Column(db.String(100), nullable=False)
-    assigned_user = db.Column(db.String(120), nullable=True) # User email or name
-    claimed_user = db.Column(db.String(120), nullable=True) # User email or name
-    status = db.Column(db.String(20), default='Untested') # 'Untested', 'In Progress', 'Passed', 'Failed'
+    assigned_user = db.Column(db.String(120), nullable=True) # User email
+    claimed_user = db.Column(db.String(120), nullable=True) # User email
+    status = db.Column(db.String(20), default='Untested') # 'Untested', 'Passed', 'Failed'
     jira_key = db.Column(db.String(50), nullable=True)
-    
-    test_cases = db.relationship('TestCase', backref='test_group', cascade="all, delete-orphan")
+
+    configuration = db.relationship('Configuration')
+    test_cases = db.relationship('TestCase', backref='test_group', cascade="all, delete-orphan", order_by='TestCase.id')
+
+    @property
+    def cases_by_category(self):
+        """Returns [(category, [test cases])] in the order the criteria were created."""
+        groups = {}
+        for tc in self.test_cases:
+            groups.setdefault(tc.display_category, []).append(tc)
+        return list(groups.items())
+
 
 class TestCase(db.Model):
     __tablename__ = 'test_cases'
     id = db.Column(db.Integer, primary_key=True)
     test_group_id = db.Column(db.Integer, db.ForeignKey('configuration_test_groups.id'), nullable=False)
-    criterion_name = db.Column(db.String(200), nullable=False) # e.g. "Idle LED: Blue"
+    category = db.Column(db.String(200), nullable=True) # e.g. "ACTION: Verify AV and Output Formats."
+    criterion_name = db.Column(db.String(200), nullable=False) # e.g. "Idle LED"
+    expected_value = db.Column(db.Text, nullable=True) # e.g. "Blue"
     status = db.Column(db.String(20), default='Untested') # 'Untested', 'Passed', 'Failed'
     comment = db.Column(db.Text, nullable=True)
 
+    def _legacy_parts(self):
+        # Rows created before the category/expected_value columns stored "category | label:value".
+        cat, sep, rest = self.criterion_name.partition(' | ')
+        if not sep:
+            return 'General Verification', self.criterion_name, ''
+        label, _, expected = rest.partition(':')
+        return cat, label, expected
 
-class Failure(db.Model):
-    __tablename__ = 'failures'
+    @property
+    def display_category(self):
+        return self.category if self.category is not None else self._legacy_parts()[0]
 
+    @property
+    def display_label(self):
+        return self.criterion_name if self.category is not None else self._legacy_parts()[1]
+
+    @property
+    def display_expected(self):
+        return (self.expected_value or '') if self.category is not None else self._legacy_parts()[2]
+
+
+class OemSku(db.Model):
+    __tablename__ = 'oem_skus'
     id = db.Column(db.Integer, primary_key=True)
-    config_name = db.Column(db.String(100), nullable=False)
-    fw_run = db.Column(db.String(50), nullable=False)
-    jira_ticket_key = db.Column(db.String(50), nullable=True)
-    claimed_by = db.Column(db.String(150), nullable=True)
-    status = db.Column(db.String(50), default='Open')
-    ini_details = db.Column(db.Text, nullable=True)
-    comments = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    name = db.Column(db.String(100), unique=True, nullable=False) # e.g. "BRIVO"
+    sku_id = db.Column(db.Integer, nullable=False)

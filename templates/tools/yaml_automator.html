@@ -4,7 +4,7 @@
 <div class="card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-            <a href="{{ url_for('tools') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Tools</a>
+            <a href="{{ url_for('tools.tools') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Tools</a>
             <h2 class="fw-bold text-light mb-0">YAML Automator</h2>
             <p class="text-secondary small mb-0">Automate SAM Chip YAML profile creation with dynamic OEM SKU indexing, TCI hex formatting, and specialty key generation.</p>
         </div>
@@ -12,7 +12,8 @@
 
     <hr class="border-secondary mb-4">
 
-    <form method="POST" action="{{ url_for('tool_yaml_automator') }}">
+    <form method="POST" action="{{ url_for('tools.tool_yaml_automator') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row g-4">
             <div class="col-md-6">
                 <div class="card bg-dark-subtle-custom p-3 border-0 h-100">

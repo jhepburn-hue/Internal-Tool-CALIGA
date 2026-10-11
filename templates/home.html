@@ -5,7 +5,13 @@
     <div class="col-md-12">
         <div class="card p-4">
             <h2 class="fw-bold mb-3">CALIGA</h2>
-            
+
+            {% if not current_user %}
+            <div class="alert alert-info mb-3">
+                Pick a user from the <strong>Pick a user</strong> menu at the top right to start.
+            </div>
+            {% endif %}
+
             <hr class="border-secondary">
 
             <div class="row mt-3">

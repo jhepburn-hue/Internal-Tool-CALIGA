@@ -4,14 +4,14 @@
 <div class="card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h3 class="fw-bold mb-0 text-light">Configurations</h3>
-        {% if current_user and current_user.role in ['Sales'] %}
-            <a href="{{ url_for('new_configuration') }}" class="btn btn-success">
+        {% if current_user.role == 'Sales' %}
+            <a href="{{ url_for('configurations.new_configuration') }}" class="btn btn-success">
                 New Configuration
             </a>
         {% endif %}
     </div>
 
-    <form method="GET" action="{{ url_for('configurations_list') }}" class="row g-3 mb-4">
+    <form method="GET" action="{{ url_for('configurations.configurations_list') }}" class="row g-3 mb-4">
         <div class="col-md-8">
             <input type="text" name="search" class="form-control bg-dark text-light border-secondary" 
                    placeholder="Search by Config Name, Hex ID, or Dec ID..." 
@@ -58,7 +58,7 @@
                         </span>
                     </td>
                     <td class="text-end">
-                        <a href="{{ url_for('configuration_details', config_name=config.config_name) }}" 
+                        <a href="{{ url_for('configurations.configuration_details', config_name=config.config_name) }}" 
                            class="btn btn-sm btn-outline-info">
                            View Details
                         </a>

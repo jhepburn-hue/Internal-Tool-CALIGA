@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<form action="{{ url_for('create_configuration') }}" method="POST">
+<form action="{{ url_for('configurations.create_configuration') }}" method="POST">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-            <a href="{{ url_for('configurations_list') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Configurations</a>
+            <a href="{{ url_for('configurations.configurations_list') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Configurations</a>
             <div class="d-flex align-items-center gap-3">
                 <h2 class="fw-bold mb-0 text-light">Create New Configuration</h2>
                 <span class="fs-6 badge status-poc">Status: POC</span>

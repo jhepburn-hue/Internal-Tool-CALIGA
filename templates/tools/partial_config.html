@@ -4,14 +4,15 @@
 <div class="card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-            <a href="{{ url_for('tools') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Tools</a>
+            <a href="{{ url_for('tools.tools') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Tools</a>
             <h2 class="fw-bold text-light mb-0">Partial Configuration Generator</h2>
         </div>
     </div>
 
     <hr class="border-secondary mb-4">
 
-    <form method="POST" action="{{ url_for('tool_partial_config') }}">
+    <form method="POST" action="{{ url_for('tools.tool_partial_config') }}" id="partial-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row g-3 mb-4">
             <div class="col-md-4">
                 <label for="fw_version" class="form-label text-secondary fw-bold">Target Firmware Version</label>
@@ -199,4 +200,35 @@
         </div>
     </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('partial-form');
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const buildBin = document.getElementById('chk_build_bin').checked;
+
+        CALIGA.runJob({
+            title: buildBin ? 'Partial INI & Profile BIN' : 'Partial INI',
+            url: form.action,
+            data: new FormData(form),
+            onDone: (job, ui) => {
+                const labels = { ini: 'Download Partial INI', bin: 'Download Profile BIN' };
+                const children = [];
+                if (job.result.warning) children.push(CALIGA.el('div', { cls: 'alert alert-warning py-2 small', text: job.result.warning }));
+                if (job.result.note) children.push(CALIGA.el('p', { cls: 'small text-secondary', text: job.result.note }));
+                job.files.forEach(key => children.push(CALIGA.el('a', {
+                    cls: 'btn btn-sm btn-outline-info w-100 mb-2',
+                    text: labels[key] || key,
+                    attrs: { href: CALIGA.jobFileUrl(job.id, key) }
+                })));
+                ui.result(CALIGA.el('div', {}, children));
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

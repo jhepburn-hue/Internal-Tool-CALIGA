@@ -1,13 +1,20 @@
 import os
 import time
+import logging
+import threading
 import serial
 import serial.tools.list_ports
 from services.gcs_service import get_or_build_firmware_bin
 from osdp_library.osdp.data_trafficking.osdp_traffic_conductor import OsdpTrafficConductor
-from osdp_library.osdp.secure_channel import OsdpSecureChannelContext, ScbkMode
+
+log = logging.getLogger(__name__)
 
 HIGH_SPEED_BAUD = 115200
 STANDARD_BAUDS = [9600, 19200, 38400, 57600, 115200]
+
+# Only one reader can be flashed at a time over the shared RS-485 adapter.
+_flash_lock = threading.Lock()
+
 
 def find_rs485_port():
     """Scans system serial ports to detect connected RS-485 adapters."""
@@ -16,117 +23,111 @@ def find_rs485_port():
         desc_lower = (p.description or "").lower()
         if any(term in desc_lower for term in ['rs485', 'rs-485', 'ftdi', 'ch340', 'cp210x', 'usb-serial', 'ttyusb', 'tty.usbserial']):
             return p.device
-    
+
     env_port = os.getenv('OSDP_SERIAL_PORT')
     if env_port and os.path.exists(env_port):
         return env_port
 
     return None
 
-def discover_reader_comms(port_path):
-    """Scans baud rates and addresses to locate reader."""
-    for baud in STANDARD_BAUDS:
-        try:
-            ser = serial.Serial(port_path, baudrate=baud, timeout=0.2)
-            for addr in range(8):
-                conductor = OsdpTrafficConductor(ser, device_address=addr, use_crc=True)
-                reply = conductor.conduct_polling_transaction()
-                if reply is not None:
-                    ser.close()
-                    print(f"[OSDP SERVICE] Reader discovered on {port_path} @ {baud} baud (Addr: {addr})")
-                    return baud, addr
-            ser.close()
-        except Exception:
-            continue
-            
-    return 9600, 0
 
-def flash_firmware_osdp(config, fw_version, user_email, progress_callback=None):
+def discover_reader_comms(port_path):
+    """Scans baud rates and addresses to locate reader. Returns (baud, address), or None when no reader answers."""
+    # 115200 first: it's the most common setting and saves scanning the slower rates.
+    for baud in [HIGH_SPEED_BAUD] + [b for b in STANDARD_BAUDS if b != HIGH_SPEED_BAUD]:
+        try:
+            ser = serial.Serial(port_path, baudrate=baud, timeout=0.3)
+        except serial.SerialException as e:
+            log.error("Couldn't open %s at %s baud: %s", port_path, baud, e)
+            return None
+
+        with ser:
+            for addr in range(8):
+                # An address that doesn't answer raises TimeoutError. Catch it per address
+                # so one silent address doesn't skip the rest of the scan at this baud rate.
+                try:
+                    ser.reset_input_buffer()
+                    conductor = OsdpTrafficConductor(ser, device_address=addr, use_crc=True)
+                    if conductor.conduct_polling_transaction() is not None:
+                        log.info("Reader discovered on %s @ %s baud (Addr: %s)", port_path, baud, addr)
+                        return baud, addr
+                except Exception as e:
+                    log.debug("No reply at %s baud, address %s: %s", baud, addr, e)
+
+    return None
+
+
+def flash_firmware_osdp(config, fw_version, user_email, output_dir, progress_callback=None, status_callback=None,
+                        force_rebuild=False):
     """
     1. Finds RS-485 port.
-    2. Downloads/compiles firmware BIN.
+    2. Downloads/compiles firmware BIN (force_rebuild builds from the user's current Forge INI).
     3. Elevates baud rate to 115200 via COMSET.
     4. Flashes reader and tracks percentage.
     5. Safely attempts COMSET restoration.
+    Returns (success, message).
     """
-    port_path = find_rs485_port()
-    if not port_path:
-        return False, "No RS-485 port found. Please connect your RS-485 serial adapter to proceed."
+    def status(text):
+        log.info(text)
+        if status_callback:
+            status_callback(text)
 
-    firmware_bin_path = get_or_build_firmware_bin(config, fw_version, user_email)
-    if not firmware_bin_path or not os.path.exists(firmware_bin_path):
-        return False, f"Firmware binary file for {config.config_name} could not be retrieved or generated."
-
-    original_baud, address = discover_reader_comms(port_path)
+    if not _flash_lock.acquire(blocking=False):
+        return False, "Another reader is being flashed right now. Wait for it to finish and try again."
 
     try:
-        ser = serial.Serial(port_path, baudrate=original_baud, timeout=2.0)
-        conductor = OsdpTrafficConductor(ser, device_address=address, use_crc=True)
+        port_path = find_rs485_port()
+        if not port_path:
+            return False, "No RS-485 port found. Please connect your RS-485 serial adapter to proceed."
 
-        if original_baud != HIGH_SPEED_BAUD:
-            print(f"[OSDP SERVICE] Elevating baud rate from {original_baud} to {HIGH_SPEED_BAUD}...")
-            try:
-                conductor.conduct_comset_transaction(address=address, baud_rate=HIGH_SPEED_BAUD)
-                ser.baudrate = HIGH_SPEED_BAUD
-                time.sleep(0.3)
-            except Exception as e:
-                print(f"[OSDP SERVICE] Warning: COMSET elevation failed ({e}). Proceeding at {original_baud}...")
+        status("Building firmware with Forge..." if force_rebuild else "Retrieving firmware binary...")
+        firmware_bin_path = get_or_build_firmware_bin(config, fw_version, user_email, output_dir, force_rebuild=force_rebuild)
+        if not firmware_bin_path or not os.path.exists(firmware_bin_path):
+            return False, f"Firmware binary file for {config.config_name} could not be retrieved or generated."
 
-        def internal_progress_cb(progress):
-            percent = round(progress.percent_complete, 1)
-            if progress_callback:
-                progress_callback(percent)
+        status(f"Searching for a reader on {port_path}...")
+        comms = discover_reader_comms(port_path)
+        if comms is None:
+            return False, (f"No reader answered on {port_path} at any standard baud rate (addresses 0-7). "
+                           "Check wiring and power, then try again.")
+        original_baud, address = comms
 
-        print(f"[OSDP SERVICE] Flashing {firmware_bin_path} over OSDP...")
-        ack_reply = conductor.conduct_file_transfer(
-            file_path=firmware_bin_path,
-            file_fragment_size=1024,
-            on_progress_callback=internal_progress_cb
-        )
+        with serial.Serial(port_path, baudrate=original_baud, timeout=2.0) as ser:
+            conductor = OsdpTrafficConductor(ser, device_address=address, use_crc=True)
 
-        if original_baud != HIGH_SPEED_BAUD:
-            print(f"[OSDP SERVICE] Attempting to restore original baud rate ({original_baud})...")
-            try:
-                conductor.conduct_comset_transaction(address=address, baud_rate=original_baud)
-            except Exception as e:
-                print(f"[OSDP SERVICE] Reader already rebooting (COMSET restoration skipped: {e})")
+            if original_baud != HIGH_SPEED_BAUD:
+                status(f"Elevating baud rate from {original_baud} to {HIGH_SPEED_BAUD}...")
+                try:
+                    conductor.conduct_comset_transaction(address=address, baud_rate=HIGH_SPEED_BAUD)
+                    ser.baudrate = HIGH_SPEED_BAUD
+                    time.sleep(0.3)
+                except Exception as e:
+                    log.warning("COMSET elevation failed (%s). Proceeding at %s...", e, original_baud)
 
-        ser.close()
+            def internal_progress_cb(progress):
+                if progress_callback:
+                    progress_callback(round(progress.percent_complete, 1))
+
+            status("Transferring firmware...")
+            conductor.conduct_file_transfer(
+                file_path=firmware_bin_path,
+                file_fragment_size=1024,
+                on_progress_callback=internal_progress_cb
+            )
+
+            if original_baud != HIGH_SPEED_BAUD:
+                log.info("Attempting to restore original baud rate (%s)...", original_baud)
+                try:
+                    conductor.conduct_comset_transaction(address=address, baud_rate=original_baud)
+                except Exception as e:
+                    log.info("Reader already rebooting (COMSET restoration skipped: %s)", e)
 
         msg = f"Flashing complete for {config.config_name}. Reader is now rebooting. Please wait until reboot is complete."
-        print(f"[OSDP SERVICE] SUCCESS: {msg}")
+        log.info(msg)
         return True, msg
 
     except Exception as e:
-        print(f"[OSDP SERVICE] Exception during OSDP Flash: {e}")
+        log.exception("Exception during OSDP flash: %s", e)
         return False, f"Communication error: {str(e)}"
-
-def flash_reader_osdp(firmware_bin_path, baud_rate=115200, address=0):
-    """
-    Flashes a reader over OSDP using a direct binary file path.
-    """
-    port_path = find_rs485_port()
-    if not port_path:
-        return False, "No RS-485 port found. Please connect your RS-485 serial adapter to proceed."
-
-    if not os.path.exists(firmware_bin_path):
-        return False, f"Firmware binary file at '{firmware_bin_path}' could not be found."
-
-    try:
-        ser = serial.Serial(port_path, baudrate=baud_rate, timeout=2.0)
-        conductor = OsdpTrafficConductor(ser, device_address=address, use_crc=True)
-
-        print(f"[OSDP SERVICE] Flashing {firmware_bin_path} over OSDP (Port: {port_path}, Baud: {baud_rate}, Addr: {address})...")
-        ack_reply = conductor.conduct_file_transfer(
-            file_path=firmware_bin_path,
-            file_fragment_size=1024
-        )
-        ser.close()
-
-        msg = "Flashing complete. Reader is now rebooting."
-        print(f"[OSDP SERVICE] SUCCESS: {msg}")
-        return True, msg
-
-    except Exception as e:
-        print(f"[OSDP SERVICE] Exception during OSDP Flash: {e}")
-        return False, f"Communication error: {str(e)}"
+    finally:
+        _flash_lock.release()

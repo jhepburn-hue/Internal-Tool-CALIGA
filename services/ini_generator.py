@@ -1,10 +1,13 @@
 import os
 import re
+import logging
 import configparser
 from pathlib import Path
 from models import Configuration
 from utils.prox_math import generate_hex_codes
 from utils.prox_parser import parse_prox_description
+
+log = logging.getLogger(__name__)
 
 DEFAULT_INI_TEMPLATE = "default.ini"
 
@@ -212,5 +215,5 @@ def generate_ini_from_config(config: Configuration, output_path: str) -> bool:
         notes_block = "\n; Notes\n" + "\n".join(f"; {ln}" if ln.strip() else ";" for ln in lines) + "\n"
 
     _emit_ini_sorted(cfg, output_path, keys_entries, prox_filter_block, notes_block)
-    print(f"[INI GENERATOR] Successfully generated complete INI for {config.config_name} -> {output_path}")
+    log.info("Generated INI for %s -> %s", config.config_name, output_path)
     return True

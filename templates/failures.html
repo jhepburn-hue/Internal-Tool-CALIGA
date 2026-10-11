@@ -27,6 +27,13 @@
                         <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25">
                             {{ f.failure_count }} Failed {{ 'Criteria' if f.failure_count > 1 else 'Criterion' }}
                         </span>
+                        {% if f.jira_key %}
+                            <a href="{{ f.jira_url }}" target="_blank" rel="noopener" class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25 text-decoration-none">
+                                {{ f.jira_key }}
+                            </a>
+                        {% else %}
+                            <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary">No Jira ticket</span>
+                        {% endif %}
                     </div>
 
                     <div class="d-flex align-items-center gap-2">
@@ -34,7 +41,8 @@
                             <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25 px-2 py-1 fs-7">
                                 Claimed by You
                             </span>
-                            <form action="{{ url_for('unclaim_failure', group_id=f.group_id) }}" method="POST" class="d-inline">
+                            <form action="{{ url_for('failures.unclaim_failure', group_id=f.group_id) }}" method="POST" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-sm btn-outline-danger" title="Unclaim this failure">
                                     Unclaim
                                 </button>
@@ -44,22 +52,24 @@
                                 Claimed by {{ f.claimed_user.split('@')[0] }}
                             </span>
                         {% else %}
-                            <form action="{{ url_for('claim_failure', group_id=f.group_id) }}" method="POST" class="d-inline">
+                            <form action="{{ url_for('failures.claim_failure', group_id=f.group_id) }}" method="POST" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-sm btn-outline-light">
                                     Claim Failure
                                 </button>
                             </form>
                         {% endif %}
 
-                        <button type="button" 
-                                class="btn btn-sm btn-primary fw-semibold btn-flash-failure" 
-                                data-config="{{ f.config_name }}" 
-                                data-version="{{ f.fw_version }}"
-                                data-group-id="{{ f.group_id }}">
+                        <button type="button"
+                                class="btn btn-sm btn-primary fw-semibold btn-flash-failure"
+                                data-group-id="{{ f.group_id }}"
+                                data-flash-and-run-url="{{ url_for('failures.flash_and_run', group_id=f.group_id) }}"
+                                data-check-url="{{ url_for('tools.check_rs485', config_name=f.config_name) }}">
                             Flash Reader
                         </button>
 
-                        <form action="{{ url_for('retest_failure', group_id=f.group_id) }}" method="POST" class="d-inline">
+                        <form action="{{ url_for('failures.retest_failure', group_id=f.group_id) }}" method="POST" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-sm btn-outline-secondary text-light">
                                 Re-Test
                             </button>
@@ -78,7 +88,7 @@
                             <thead>
                                 <tr class="text-secondary border-bottom border-secondary small">
                                     <th style="width: 45%;" class="fw-semibold">Failed Validation Criteria</th>
-                                    <th style="width: 15%;" class="fw-semibold">Evaluation</th>
+                                    <th style="width: 15%;" class="fw-semibold">Expected</th>
                                     <th style="width: 40%;" class="fw-semibold">Tester Comment</th>
                                 </tr>
                             </thead>
@@ -86,14 +96,11 @@
                                 {% for case in f.failed_cases %}
                                 <tr>
                                     <td class="text-light small py-2">
-                                        {% set parts = case.criterion_name.split(' | ') %}
-                                        <span class="text-secondary me-1">[{{ parts[0] if parts|length > 1 else 'General' }}]</span>
-                                        <span class="fw-medium">{{ parts[1].split(':::')[0] if parts|length > 1 else case.criterion_name }}</span>
+                                        <span class="text-secondary me-1">[{{ case.display_category }}]</span>
+                                        <span class="fw-medium">{{ case.display_label }}</span>
                                     </td>
                                     <td class="py-2">
-                                        <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25">
-                                            Failed
-                                        </span>
+                                        <code class="text-warning small">{{ case.display_expected }}</code>
                                     </td>
                                     <td class="py-2">
                                         <span class="text-secondary small fst-italic">&ldquo;{{ case.comment or 'No comment provided.' }}&rdquo;</span>
@@ -107,22 +114,28 @@
                     <div class="accordion border-0" id="iniAccordion_{{ f.group_id }}">
                         <div class="accordion-item bg-black bg-opacity-25 border border-secondary rounded">
                             <h2 class="accordion-header" id="headingIni_{{ f.group_id }}">
-                                <button class="accordion-button collapsed bg-transparent text-light border-0 small fw-semibold py-2" 
-                                        type="button" 
-                                        data-bs-toggle="collapse" 
+                                <button class="accordion-button collapsed bg-transparent text-light border-0 small fw-semibold py-2"
+                                        type="button"
+                                        data-bs-toggle="collapse"
                                         data-bs-target="#collapseIni_{{ f.group_id }}">
                                     Inspect & Edit INI File
                                 </button>
                             </h2>
-                            <div id="collapseIni_{{ f.group_id }}" class="accordion-collapse collapse" data-bs-parent="#iniAccordion_{{ f.group_id }}">
+                            <div id="collapseIni_{{ f.group_id }}" class="accordion-collapse collapse ini-drawer"
+                                 data-bs-parent="#iniAccordion_{{ f.group_id }}"
+                                 data-group-id="{{ f.group_id }}"
+                                 data-ini-url="{{ url_for('failures.failure_ini', group_id=f.group_id) }}">
                                 <div class="accordion-body border-top border-secondary p-3">
-                                    <form action="{{ url_for('save_failure_ini', group_id=f.group_id) }}" method="POST">
+                                    <form action="{{ url_for('failures.save_failure_ini', group_id=f.group_id) }}" method="POST">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <div class="mb-3">
                                             <textarea id="ini_content_{{ f.group_id }}"
-                                                      name="ini_content" 
-                                                      rows="10" 
-                                                      class="form-control bg-dark text-light border-secondary font-monospace small" 
-                                                      style="resize: vertical;">{{ f.ini_content }}</textarea>
+                                                      name="ini_content"
+                                                      rows="10"
+                                                      class="form-control bg-dark text-light border-secondary font-monospace small"
+                                                      style="resize: vertical;"
+                                                      placeholder="Loading INI from Cloud Storage..."
+                                                      disabled></textarea>
                                         </div>
                                         <div class="d-flex justify-content-end">
                                             <button type="submit" class="btn btn-sm btn-outline-success px-4">
@@ -145,117 +158,55 @@
         </div>
     {% endif %}
 </div>
+{% endblock %}
 
-<div class="modal fade" id="flashProgressModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-light border-secondary shadow">
-            <div class="modal-header border-secondary py-3">
-                <h5 class="modal-title fw-bold">OSDP Firmware Flashing</h5>
-            </div>
-            <div class="modal-body text-center p-4">
-                <div id="flash-status-text" class="mb-3 text-secondary">Initializing RS-485 port...</div>
-                
-                <div class="progress bg-secondary mb-3" style="height: 24px;">
-                    <div id="flash-progress-bar" 
-                         class="progress-bar progress-bar-striped progress-bar-animated bg-warning text-dark fw-bold" 
-                         role="progressbar" style="width: 0%;">0%</div>
-                </div>
-
-                <div id="reboot-alert" class="alert alert-info d-none mb-0" role="alert">
-                    <i class="bi bi-arrow-repeat spin me-2"></i>
-                    <strong>Reader is rebooting!</strong> Please wait until reboot is complete.
-                </div>
-            </div>
-            <div class="modal-footer border-secondary py-2">
-                <button id="btn-close-flash-modal" type="button" class="btn btn-sm btn-secondary d-none" onclick="window.location.reload();">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
-
+{% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const flashButtons = document.querySelectorAll('.btn-flash-failure');
+    const iniLoads = {};
 
-    flashButtons.forEach(btn => {
-        btn.addEventListener('click', function(e) {
-            e.preventDefault();
-
-            const configName = this.getAttribute('data-config');
-            const fwVersion = this.getAttribute('data-version') || 'v5.4.10';
-            const groupId = this.getAttribute('data-group-id');
-            const iniTextarea = document.getElementById('ini_content_' + groupId);
-            const iniContent = iniTextarea ? iniTextarea.value : '';
-
-            fetch("/configurations/" + encodeURIComponent(configName) + "/check-rs485")
-                .then(res => res.json())
+    // Loads a failure's INI from Cloud Storage the first time it's needed.
+    function loadIni(drawer) {
+        const groupId = drawer.dataset.groupId;
+        if (!iniLoads[groupId]) {
+            const textarea = document.getElementById('ini_content_' + groupId);
+            iniLoads[groupId] = CALIGA.getJson(drawer.dataset.iniUrl)
                 .then(data => {
-                    if (!data.connected) {
-                        alert("RS-485 Port Not Found!\n\n" + data.error);
-                        return;
-                    }
-
-                    const modal = new bootstrap.Modal(document.getElementById('flashProgressModal'));
-                    const statusText = document.getElementById('flash-status-text');
-                    const progressBar = document.getElementById('flash-progress-bar');
-                    const rebootAlert = document.getElementById('reboot-alert');
-                    const closeBtn = document.getElementById('btn-close-flash-modal');
-
-                    statusText.innerText = "Discovering reader & elevating baud rate to 115200...";
-                    progressBar.style.width = "0%";
-                    progressBar.innerText = "0%";
-                    progressBar.className = "progress-bar progress-bar-striped progress-bar-animated bg-warning text-dark fw-bold";
-                    rebootAlert.classList.add('d-none');
-                    closeBtn.classList.add('d-none');
-                    modal.show();
-
-                    fetch("/failures/save-ini/" + groupId, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: new URLSearchParams({ 'ini_content': iniContent })
-                    }).then(() => {
-                        const streamUrl = "/configurations/" + encodeURIComponent(configName) + "/flash-stream?fw_version=" + encodeURIComponent(fwVersion);
-                        const eventSource = new EventSource(streamUrl);
-
-                        eventSource.onmessage = function(event) {
-                            const payload = JSON.parse(event.data);
-
-                            if (payload.type === 'status') {
-                                statusText.innerText = payload.text;
-                            } else if (payload.type === 'progress') {
-                                const p = payload.percent;
-                                progressBar.style.width = p + "%";
-                                progressBar.innerText = p + "%";
-                                statusText.innerText = `Transferring firmware... (${p}%)`;
-                            } else if (payload.type === 'complete') {
-                                eventSource.close();
-                                progressBar.style.width = "100%";
-                                progressBar.innerText = "100%";
-                                progressBar.classList.remove('bg-warning', 'progress-bar-animated');
-                                progressBar.classList.add('bg-success');
-
-                                if (payload.success) {
-                                    statusText.innerText = "Firmware Transfer Complete!";
-                                    rebootAlert.classList.remove('d-none');
-                                } else {
-                                    statusText.innerText = "Flashing Failed: " + payload.msg;
-                                    progressBar.classList.remove('bg-success');
-                                    progressBar.classList.add('bg-danger');
-                                }
-                                closeBtn.classList.remove('d-none');
-                            }
-                        };
-
-                        eventSource.onerror = function() {
-                            eventSource.close();
-                            statusText.innerText = "Connection lost during flashing.";
-                            closeBtn.classList.remove('d-none');
-                        };
-                    });
+                    textarea.value = data.content;
+                    textarea.disabled = false;
+                    return data.content;
                 })
                 .catch(err => {
-                    alert("Error checking RS-485 port connection.");
+                    delete iniLoads[groupId];
+                    textarea.placeholder = 'Could not load INI: ' + err.message;
+                    throw err;
                 });
+        }
+        return iniLoads[groupId];
+    }
+
+    document.querySelectorAll('.ini-drawer').forEach(drawer => {
+        drawer.addEventListener('show.bs.collapse', () => loadIni(drawer).catch(() => {}));
+    });
+
+    document.querySelectorAll('.btn-flash-failure').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const groupId = this.dataset.groupId;
+            const drawer = document.querySelector(`.ini-drawer[data-group-id="${groupId}"]`);
+
+            try {
+                await loadIni(drawer);
+            } catch (err) {
+                alert('Could not load the INI to flash: ' + err.message);
+                return;
+            }
+
+            CALIGA.flashReader({
+                title: 'Save INI, Rebuild, and Flash',
+                checkUrl: this.dataset.checkUrl,
+                url: this.dataset.flashAndRunUrl,
+                data: { ini_content: document.getElementById('ini_content_' + groupId).value }
+            });
         });
     });
 });

@@ -1,52 +1,65 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<form action="{{ url_for('update_configuration', config_name=config.config_name) }}" method="POST">
+{% set is_sales = current_user.role == 'Sales' %}
+{% set can_flash = current_user.role in ['SET', 'QA'] %}
+
+{# Standalone forms. Their buttons sit inside the update form below and point here with the form= attribute. #}
+{% if is_sales and config.status in ['POC', 'Active'] %}
+<form id="toggle-status-form" action="{{ url_for('configurations.toggle_status', config_name=config.config_name) }}" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</form>
+{% endif %}
+{% if is_sales and config.status != 'Archived' %}
+<form id="archive-form" action="{{ url_for('configurations.archive_configuration', config_name=config.config_name) }}" method="POST"
+      data-confirm="Are you sure you want to archive {{ config.config_name }}? Tools and editing will be disabled.">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</form>
+{% endif %}
+{% if current_user.role in ['Sales', 'SET'] and config.status == 'Active' %}
+<form id="alert-qa-form" action="{{ url_for('configurations.alert_qa', config_name=config.config_name) }}" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="fw_version" id="alert-qa-fw" value="v5.4.10">
+</form>
+{% endif %}
+
+<form action="{{ url_for('configurations.update_configuration', config_name=config.config_name) }}" method="POST">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-            <a href="{{ url_for('configurations_list') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Configurations</a>
-            
+            <a href="{{ url_for('configurations.configurations_list') }}" class="btn btn-sm btn-outline-secondary mb-2">&larr; Back to Configurations</a>
+
             <h2 class="fw-bold text-light mb-2">{{ config.config_name }}</h2>
-            
+
             <div class="d-flex align-items-center gap-2">
                 <span class="badge bg-{{ 'success' if config.status == 'Production' else 'primary' if config.status == 'Active' else 'warning' if config.status == 'POC' else 'secondary' }} fs-6">
                     {{ config.status }}
                 </span>
 
-                {% if current_user.role in ['Sales'] %}
-                    {% if config.status in ['POC', 'Active'] %}
-                        <form action="{{ url_for('toggle_config_status', config_id=config.id) }}" method="POST" class="d-inline">
-                            <button type="submit" class="btn btn-sm btn-outline-light fw-bold">
-                                Move to {{ 'Active' if config.status == 'POC' else 'POC' }}
-                            </button>
-                        </form>
-                        </form>
-                    {% endif %}
+                {% if is_sales and config.status in ['POC', 'Active'] %}
+                    <button type="submit" form="toggle-status-form" class="btn btn-sm btn-outline-light fw-bold">
+                        Move to {{ 'Active' if config.status == 'POC' else 'POC' }}
+                    </button>
+                {% endif %}
 
-                    {% if config.status != 'Archived' %}
-                        <form action="{{ url_for('archive_configuration', config_name=config.config_name) }}" 
-                            method="POST" 
-                            class="d-inline"
-                            onsubmit="return confirm('Are you sure you want to archive {{ config.config_name }}? Tools and editing will be disabled.');">
-                            <button type="submit" class="btn btn-sm btn-outline-danger fw-bold ms-1">
-                                Archive Configuration
-                            </button>
-                        </form>
-                    {% endif %}
+                {% if is_sales and config.status != 'Archived' %}
+                    <button type="submit" form="archive-form" class="btn btn-sm btn-outline-danger fw-bold ms-1">
+                        Archive Configuration
+                    </button>
                 {% endif %}
             </div>
         </div>
 
         <div class="d-flex gap-2">
-            {% if config.status == 'POC' and current_user and current_user.role in ['SET', 'Sales'] %}
+            {% if config.status == 'POC' and is_sales %}
                 <button type="submit" class="btn btn-sm btn-success px-3">Save Changes</button>
             {% endif %}
-            <a id="btn-alert-qa" 
-            href="{{ url_for('alert_qa', config_name=config.config_name, fw_version='v5.4.10') }}" 
-            class="btn btn-sm btn-outline-warning text-light border-warning">
-                Alert QA
-            </a>
+            {% if current_user.role in ['Sales', 'SET'] and config.status == 'Active' %}
+                <button type="submit" form="alert-qa-form" class="btn btn-sm btn-outline-warning text-light border-warning">
+                    Alert QA
+                </button>
+            {% endif %}
         </div>
     </div>
 
@@ -69,17 +82,26 @@
                 <p class="text-secondary mb-0">Action tools are disabled for Archived configurations.</p>
             {% else %}
                 <div class="d-flex flex-wrap gap-2">
-                    <a id="btn-download-ini" href="{{ url_for('download_ini', config_name=config.config_name, fw_version='v5.4.10') }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download INI</a>
-                    <a id="btn-download-profile" href="{{ url_for('download_profile', config_name=config.config_name, fw_version='v5.4.10') }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Profile Bin</a>
-                    <a id="btn-download-firmware" href="{{ url_for('download_firmware', config_name=config.config_name, fw_version='v5.4.10') }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download Firmware Bin</a>
-                    <a id="btn-flash-config" href="{{ url_for('flash_configuration', config_name=config.config_name, fw_version='v5.4.10') }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Flash Configuration</a>
-                    <a id="btn-get-tokens" href="#" class="btn btn-sm btn-outline-secondary text-light border-secondary">Get Tokens</a>
+                    <a id="btn-download-ini" href="{{ url_for('tools.download_ini', config_name=config.config_name, fw_version='v5.4.10') }}" class="btn btn-sm btn-outline-secondary text-light border-secondary">Download INI</a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-light border-secondary"
+                            data-download-url="{{ url_for('tools.download_profile', config_name=config.config_name) }}"
+                            data-title="Profile BIN">Download Profile Bin</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-light border-secondary"
+                            data-download-url="{{ url_for('tools.download_firmware', config_name=config.config_name) }}"
+                            data-title="Firmware BIN">Download Firmware Bin</button>
+                    {% if can_flash %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-light border-secondary"
+                            data-flash-url="{{ url_for('tools.flash_configuration', config_name=config.config_name) }}"
+                            data-check-url="{{ url_for('tools.check_rs485', config_name=config.config_name) }}"
+                            data-fw-select="fw_version_select">Flash Configuration</button>
+                    {% endif %}
+                    <button type="button" id="btn-get-tokens" class="btn btn-sm btn-outline-secondary text-light border-secondary">Get Tokens</button>
                 </div>
             {% endif %}
         </div>
     </div>
 
-    {% set is_editable = (config.status == 'POC' and current_user and current_user.role in ['SET', 'Sales']) %}
+    {% set is_editable = (config.status == 'POC' and is_sales) %}
     {% set csn_options = ['Off', 'On', 'Standard', '32-bit MSB', '32-bit LSB', '40-bit MSB', '40-bit LSB', '56-bit MSB', '56-bit LSB'] %}
 
     <div class="row g-4">
@@ -416,7 +438,7 @@
         </div>
     </div>
 
-    {% if current_user and (current_user.role in ['SET', 'QA']) %}
+    {% if current_user.role in ['Sales', 'SET'] %}
         <div class="mt-5">
             <h5 class="fw-bold text-light mb-3">Revision History</h5>
             <div class="table-responsive">
@@ -448,33 +470,6 @@
 </div>
 </form>
 
-<div class="modal fade" id="flashProgressModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-light border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title fw-bold">OSDP Firmware Flashing</h5>
-            </div>
-            <div class="modal-body text-center p-4">
-                <div id="flash-status-text" class="mb-3 text-secondary">Initializing RS-485 port...</div>
-                
-                <div class="progress bg-secondary mb-3" style="height: 24px;">
-                    <div id="flash-progress-bar" 
-                         class="progress-bar progress-bar-striped progress-bar-animated bg-warning text-dark fw-bold" 
-                         role="progressbar" style="width: 0%;">0%</div>
-                </div>
-
-                <div id="reboot-alert" class="alert alert-info d-none mb-0" role="alert">
-                    <i class="bi bi-arrow-repeat spin me-2"></i>
-                    <strong>Reader is rebooting!</strong> Please wait until reboot is complete.
-                </div>
-            </div>
-            <div class="modal-footer border-secondary">
-                <button id="btn-close-flash-modal" type="button" class="btn btn-sm btn-secondary d-none" onclick="window.location.reload();">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <div class="modal fade" id="tokensModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content bg-dark text-light border-secondary">
@@ -485,176 +480,82 @@
             <div class="modal-body p-4">
                 <div id="tokens-loading" class="text-center py-3">
                     <div class="spinner-border text-warning mb-2" role="status"></div>
-                    <p class="text-secondary mb-0">Building binaries & syncing with PocketBase...</p>
+                    <p class="text-secondary mb-0">Looking up existing tokens...</p>
                 </div>
-
-                <div id="tokens-content" class="d-none">
-                    <div class="card bg-dark-subtle-custom border-secondary p-3 mb-3">
-                        <div class="small text-secondary fw-bold mb-1" id="profile-token-name">5.4.10 CWL1 PROFILE</div>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <code class="fs-5 text-warning fw-bold" id="profile-token-val">c-XXXXXXXX</code>
-                            <button class="btn btn-sm btn-outline-light" onclick="navigator.clipboard.writeText(document.getElementById('profile-token-val').innerText);">Copy</button>
-                        </div>
-                    </div>
-
-                    <div class="card bg-dark-subtle-custom border-secondary p-3">
-                        <div class="small text-secondary fw-bold mb-1" id="firmware-token-name">5.4.10 CWL1 FIRMWARE</div>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <code class="fs-5 text-warning fw-bold" id="firmware-token-val">c-XXXXXXXX</code>
-                            <button class="btn btn-sm btn-outline-light" onclick="navigator.clipboard.writeText(document.getElementById('firmware-token-val').innerText);">Copy</button>
-                        </div>
-                    </div>
-                </div>
+                <div id="tokens-content" class="d-none"></div>
+                <p class="small text-secondary mt-3 mb-0">
+                    Sync builds both binaries and uploads them to PocketBase, creating records or overwriting existing ones.
+                </p>
             </div>
             <div class="modal-footer border-secondary">
+                <button type="button" id="btn-sync-tokens" class="btn btn-sm btn-outline-warning">Sync to PocketBase</button>
                 <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const fwSelect = document.getElementById('fw_version_select');
     const iniBtn = document.getElementById('btn-download-ini');
-    const profileBtn = document.getElementById('btn-download-profile');
-    const firmwareBtn = document.getElementById('btn-download-firmware');
-    const alertQaBtn = document.getElementById('btn-alert-qa');
+    const alertQaFw = document.getElementById('alert-qa-fw');
+    const iniBase = {{ url_for('tools.download_ini', config_name=config.config_name)|tojson }};
+    const tokensLookupUrl = {{ url_for('tools.get_tokens', config_name=config.config_name)|tojson }};
+    const tokensSyncUrl = {{ url_for('tools.sync_config_tokens', config_name=config.config_name)|tojson }};
 
     function updateActionUrls() {
         const fw = fwSelect.value;
-        if (iniBtn) {
-            iniBtn.href = "{{ url_for('download_ini', config_name=config.config_name) }}?fw_version=" + fw;
-        }
-        if (profileBtn) {
-            profileBtn.href = "{{ url_for('download_profile', config_name=config.config_name) }}?fw_version=" + fw;
-        }
-        if (firmwareBtn) {
-            firmwareBtn.href = "{{ url_for('download_firmware', config_name=config.config_name) }}?fw_version=" + fw;
-        }
-        if (alertQaBtn) {
-            alertQaBtn.href = "{{ url_for('alert_qa', config_name=config.config_name) }}?fw_version=" + fw;
-        }
+        if (iniBtn) iniBtn.href = iniBase + '?fw_version=' + encodeURIComponent(fw);
+        if (alertQaFw) alertQaFw.value = fw;
     }
+    fwSelect.addEventListener('change', updateActionUrls);
+    updateActionUrls();
 
-    if (fwSelect) {
-        fwSelect.addEventListener('change', updateActionUrls);
-        updateActionUrls();
-    }
-});
+    document.querySelectorAll('[data-download-url]').forEach(btn => {
+        btn.addEventListener('click', () => CALIGA.downloadJob({
+            title: btn.dataset.title,
+            url: btn.dataset.downloadUrl,
+            data: { fw_version: fwSelect.value }
+        }));
+    });
 
-document.addEventListener('DOMContentLoaded', function() {
-    const flashBtn = document.getElementById('btn-flash-config');
-    const fwSelect = document.getElementById('fw_version_select');
-
-    if (flashBtn) {
-        flashBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            const selectedFw = fwSelect ? fwSelect.value : 'v5.4.10';
-
-            fetch("{{ url_for('check_rs485', config_name=config.config_name) }}")
-                .then(res => res.json())
-                .then(data => {
-                    if (!data.connected) {
-                        alert("RS-485 Port Not Found!\n\n" + data.error);
-                        return;
-                    }
-
-                    const modal = new bootstrap.Modal(document.getElementById('flashProgressModal'));
-                    const statusText = document.getElementById('flash-status-text');
-                    const progressBar = document.getElementById('flash-progress-bar');
-                    const rebootAlert = document.getElementById('reboot-alert');
-                    const closeBtn = document.getElementById('btn-close-flash-modal');
-
-                    statusText.innerText = "Discovering reader & elevating baud rate to 115200...";
-                    progressBar.style.width = "0%";
-                    progressBar.innerText = "0%";
-                    rebootAlert.classList.add('d-none');
-                    closeBtn.classList.add('d-none');
-                    modal.show();
-
-                    const streamUrl = "{{ url_for('flash_stream', config_name=config.config_name) }}?fw_version=" + selectedFw;
-                    const eventSource = new EventSource(streamUrl);
-
-                    eventSource.onmessage = function(event) {
-                        const payload = JSON.parse(event.data);
-
-                        if (payload.type === 'status') {
-                            statusText.innerText = payload.text;
-                        } else if (payload.type === 'progress') {
-                            const p = payload.percent;
-                            progressBar.style.width = p + "%";
-                            progressBar.innerText = p + "%";
-                            statusText.innerText = `Transferring firmware... (${p}%)`;
-                        } else if (payload.type === 'complete') {
-                            eventSource.close();
-                            progressBar.style.width = "100%";
-                            progressBar.innerText = "100%";
-                            progressBar.classList.remove('bg-warning', 'progress-bar-animated');
-                            progressBar.classList.add('bg-success');
-
-                            if (payload.success) {
-                                statusText.innerText = "Firmware Transfer Complete!";
-                                rebootAlert.classList.remove('d-none');
-                            } else {
-                                statusText.innerText = "Flashing Failed: " + payload.msg;
-                                progressBar.classList.remove('bg-success');
-                                progressBar.classList.add('bg-danger');
-                            }
-                            closeBtn.classList.remove('d-none');
-                        }
-                    };
-
-                    eventSource.onerror = function() {
-                        eventSource.close();
-                        statusText.innerText = "Connection lost during flashing.";
-                        closeBtn.classList.remove('d-none');
-                    };
-                })
-                .catch(err => {
-                    alert("Error checking RS-485 port connection.");
-                });
-        });
-    }
-});
-
-document.addEventListener('DOMContentLoaded', function() {
     const tokensBtn = document.getElementById('btn-get-tokens');
-    const fwSelect = document.getElementById('fw_version_select');
+    if (!tokensBtn) return;
 
-    if (tokensBtn) {
-        tokensBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            const selectedFw = fwSelect ? fwSelect.value : 'v5.4.10';
+    const tokensModal = new bootstrap.Modal(document.getElementById('tokensModal'));
+    const loading = document.getElementById('tokens-loading');
+    const content = document.getElementById('tokens-content');
 
-            const modal = new bootstrap.Modal(document.getElementById('tokensModal'));
-            const loading = document.getElementById('tokens-loading');
-            const content = document.getElementById('tokens-content');
+    tokensBtn.addEventListener('click', async () => {
+        loading.classList.remove('d-none');
+        content.classList.add('d-none');
+        tokensModal.show();
 
-            loading.classList.remove('d-none');
-            content.classList.add('d-none');
-            modal.show();
+        try {
+            const tokens = await CALIGA.getJson(tokensLookupUrl + '?fw_version=' + encodeURIComponent(fwSelect.value));
+            content.replaceChildren(CALIGA.tokenCard(tokens.profile), CALIGA.tokenCard(tokens.firmware));
+        } catch (err) {
+            content.replaceChildren(CALIGA.el('div', { cls: 'text-danger', text: err.message }));
+        }
+        loading.classList.add('d-none');
+        content.classList.remove('d-none');
+    });
 
-            const url = "{{ url_for('get_tokens', config_name=config.config_name) }}?fw_version=" + selectedFw;
-
-            fetch(url)
-                .then(res => res.json())
-                .then(data => {
-                    loading.classList.add('d-none');
-                    content.classList.remove('d-none');
-
-                    document.getElementById('profile-token-name').innerText = data.profile_name;
-                    document.getElementById('profile-token-val').innerText = data.profile_token;
-
-                    document.getElementById('firmware-token-name').innerText = data.firmware_name;
-                    document.getElementById('firmware-token-val').innerText = data.firmware_token;
-                })
-                .catch(err => {
-                    loading.classList.add('d-none');
-                    alert("Error retrieving or syncing tokens with PocketBase.");
-                });
+    document.getElementById('btn-sync-tokens').addEventListener('click', () => {
+        tokensModal.hide();
+        CALIGA.runJob({
+            title: 'Sync Tokens with PocketBase',
+            url: tokensSyncUrl,
+            data: { fw_version: fwSelect.value },
+            onDone: (job, ui) => ui.result(CALIGA.el('div', {}, [
+                CALIGA.tokenCard(job.result.profile),
+                CALIGA.tokenCard(job.result.firmware)
+            ]))
         });
-    }
+    });
 });
 </script>
 {% endblock %}

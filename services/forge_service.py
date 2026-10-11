@@ -1,8 +1,13 @@
 import os
-import requests
 import time
+import logging
+import requests
 from datetime import datetime, timezone
 from pathlib import Path
+from services.gcs_client import get_gcs_client
+from utils.versions import normalize_fw_version
+
+log = logging.getLogger(__name__)
 
 FORGE_BASE_URL = os.getenv('FORGE_BASE_URL', 'https://forge.wavelynxdev.com')
 ACTIVE_IAP_COOKIE = os.getenv('ACTIVE_IAP_COOKIE', '')
@@ -13,15 +18,11 @@ FIRMWARE_IDS = {
     "v5.4.10": "371132",
 }
 
-try:
-    from google.cloud import storage
-except ImportError:
-    storage = None
 
 def _get_auth_headers():
     cookie_raw = ACTIVE_IAP_COOKIE.strip()
     uid_raw = ACTIVE_IAP_UID.strip()
-    
+
     if "__Host-GCP_IAP_AUTH_TOKEN" in cookie_raw or "GCP_IAAP_AUTH" in cookie_raw:
         cookie_header = cookie_raw
     else:
@@ -33,23 +34,32 @@ def _get_auth_headers():
         "Cookie": cookie_header
     }
 
-def trigger_forge_build(config_name, fw_version, source="user", gitlab_ref="master", firmware_build_id=None):
+
+def _firmware_build_id(version_str):
+    build_id = FIRMWARE_IDS.get(version_str)
+    if not build_id:
+        log.error("No Forge firmware build ID configured for %s.", version_str)
+    return build_id
+
+
+def trigger_forge_build(config_name, fw_version, source="user", gitlab_ref="master"):
     """
     Triggers a build job on Forge via POST to /configs/build.
     """
     if not ACTIVE_IAP_COOKIE:
-        print("[FORGE SERVICE] Warning: ACTIVE_IAP_COOKIE missing. Skipping Forge trigger.")
+        log.warning("ACTIVE_IAP_COOKIE missing. Skipping Forge trigger.")
         return False
 
     url = f"{FORGE_BASE_URL.rstrip('/')}/configs/build"
     headers = _get_auth_headers()
 
-    clean_ver = fw_version.strip()
-    version_str = clean_ver if clean_ver.startswith('v') else f"v{clean_ver}"
+    version_str, _ = normalize_fw_version(fw_version)
     stem = config_name.rsplit(".", 1)[0]
     ini_filename = f"{stem}.ini"
-    
-    build_id = firmware_build_id or FIRMWARE_IDS.get(version_str, "371132")
+
+    build_id = _firmware_build_id(version_str)
+    if not build_id:
+        return False
 
     payload = {
         "version": version_str,
@@ -66,20 +76,19 @@ def trigger_forge_build(config_name, fw_version, source="user", gitlab_ref="mast
     }
 
     try:
-        print(f"[FORGE SERVICE] Submitting build for {stem} ({version_str}) to Forge...")
+        log.info("Submitting build for %s (%s) to Forge...", stem, version_str)
         response = requests.post(url, data=payload, headers=headers, timeout=30, allow_redirects=False)
-        print(f"[FORGE SERVICE] Forge Status Code: {response.status_code}")
-        
+
         if response.status_code in [200, 201, 302, 303]:
-            build_job_url = response.headers.get("Location", "")
-            print(f"[FORGE SERVICE] Build trigger submitted successfully! (Build Job: {build_job_url})")
+            log.info("Build trigger submitted (Build Job: %s)", response.headers.get("Location", ""))
             return True
-        else:
-            print(f"[FORGE SERVICE] Forge returned status {response.status_code}: {response.text[:300]}")
-            return False
-    except Exception as e:
-        print(f"[FORGE SERVICE] Exception triggering Forge build: {e}")
+
+        log.error("Forge returned status %s: %s", response.status_code, response.text[:300])
         return False
+    except Exception as e:
+        log.exception("Exception triggering Forge build: %s", e)
+        return False
+
 
 def generate_partial_ini_content(form_data):
     """
@@ -137,23 +146,26 @@ def generate_partial_ini_content(form_data):
 
     return "\n".join(ini_lines).strip()
 
-def compile_partial_bin_via_forge(partial_name, fw_version, user_email="jhepburn@wavelynx.com", source="user", gitlab_ref="master", firmware_build_id=None, timeout_s=120):
+
+def compile_partial_bin_via_forge(partial_name, fw_version, user_email, output_dir, source="user", gitlab_ref="master", timeout_s=120):
     """
     1. Triggers Forge compilation job for a partial configuration profile.
-    2. Polls GCS bucket subfolder (forge/{user_email}/v{version}/partials/) until compiled binary arrives.
+    2. Polls GCS (forge/{user_email}/v{version}/partials/) until the compiled binary arrives.
+    3. Downloads it into output_dir and returns the local path, or None on failure.
     """
     if not ACTIVE_IAP_COOKIE:
-        print("[FORGE SERVICE] Warning: ACTIVE_IAP_COOKIE missing. Skipping Forge trigger.")
-        return False
+        log.warning("ACTIVE_IAP_COOKIE missing. Skipping Forge trigger.")
+        return None
 
     url = f"{FORGE_BASE_URL.rstrip('/')}/configs/build"
     headers = _get_auth_headers()
 
-    clean_ver = fw_version.strip()
-    version_str = clean_ver if clean_ver.startswith('v') else f"v{clean_ver}"
+    version_str, _ = normalize_fw_version(fw_version)
     stem = partial_name.rsplit(".", 1)[0] if "." in partial_name else partial_name
     ini_filename = f"{stem}.ini"
-    build_id = firmware_build_id or FIRMWARE_IDS.get(version_str, "371132")
+    build_id = _firmware_build_id(version_str)
+    if not build_id:
+        return None
     user_email_clean = user_email.lower().strip()
 
     payload = {
@@ -166,64 +178,53 @@ def compile_partial_bin_via_forge(partial_name, fw_version, user_email="jhepburn
         "source": source,
         "firmware_source": "",
         "firmware_build_id": build_id,
-        "gitlab_ref": gitlab_ref,  
+        "gitlab_ref": gitlab_ref,
         "include_partials": "1"
     }
 
     min_updated_time = datetime.now(timezone.utc)
 
     try:
-        print(f"[FORGE SERVICE] Submitting partial build for {stem} ({version_str}) to Forge...")
+        log.info("Submitting partial build for %s (%s) to Forge...", stem, version_str)
         response = requests.post(url, data=payload, headers=headers, timeout=30, allow_redirects=False)
-        print(f"[FORGE SERVICE] Forge Status Code: {response.status_code}")
 
         if response.status_code not in [200, 201, 302, 303]:
-            print(f"[FORGE SERVICE] Forge returned status {response.status_code}: {response.text[:300]}")
-            return False
+            log.error("Forge returned status %s: %s", response.status_code, response.text[:300])
+            return None
 
-        redirect_target = response.headers.get("Location", "")
-        print(f"[FORGE SERVICE] Partial build job queued successfully! (Job URL: {redirect_target})")
-        print(f"[FORGE SERVICE] Polling GCS for output binary...")
+        log.info("Partial build job queued (Job URL: %s). Polling GCS for output binary...", response.headers.get("Location", ""))
 
-        if storage is not None:
-            try:
-                storage_client = storage.Client()
-            except Exception:
-                if "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
-                    del os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
-                storage_client = storage.Client()
+        storage_client = get_gcs_client()
+        if storage_client is None:
+            log.error("GCS client unavailable. Can't poll for the partial binary.")
+            return None
 
-            bucket_name = os.getenv("FORGE_GCS_BUCKET", "wavelynx_apex_config")
-            prefix_path = f"forge/{user_email_clean}/{version_str}/partials/"
+        bucket_name = os.getenv("FORGE_GCS_BUCKET", "wavelynx_apex_config")
+        prefix_path = f"forge/{user_email_clean}/{version_str}/partials/"
+        clean_stem = stem.lower().strip()
 
-            start_time = time.time()
-            clean_stem = stem.lower().strip()
+        start_time = time.time()
+        while time.time() - start_time < timeout_s:
+            fresh = [
+                b for b in storage_client.list_blobs(bucket_name, prefix=prefix_path)
+                if b.size and b.updated >= min_updated_time
+                and Path(b.name).name.lower().endswith((".bin", ".dck"))
+            ]
+            # Prefer a file named after this partial; otherwise take the newest binary.
+            fresh.sort(key=lambda b: (clean_stem in Path(b.name).name.lower(), b.updated), reverse=True)
 
-            print(f"[GCS Polling] Scanning gs://{bucket_name}/{prefix_path} for '{clean_stem}'...")
+            if fresh:
+                blob = fresh[0]
+                local_path = os.path.join(output_dir, Path(blob.name).name)
+                blob.download_to_filename(local_path)
+                log.info("Found compiled partial BIN: %s (%s bytes)", blob.name, blob.size)
+                return local_path
 
-            while time.time() - start_time < timeout_s:
-                blobs = list(storage_client.list_blobs(bucket_name, prefix=prefix_path))
-                sorted_blobs = sorted(blobs, key=lambda x: x.updated, reverse=True)
+            time.sleep(3)
 
-                for b in sorted_blobs:
-                    filename = Path(b.name).name
-                    filename_lower = filename.lower()
-
-                    if b.size == 0 or b.updated < min_updated_time:
-                        continue
-
-                    if filename_lower.endswith(".bin") or filename_lower.endswith(".dck"):
-                        print(f"[GCS Success] Found compiled Partial BIN: {b.name} ({b.size} bytes)")
-                        return True
-
-                time.sleep(3)
-
-            print(f"[GCS Timeout] No compiled binary found after {timeout_s}s.")
-            return False
-        else:
-            print("[FORGE SERVICE] Google Cloud Storage library not installed; skipping polling.")
-            return True
+        log.error("No compiled partial binary found after %ss.", timeout_s)
+        return None
 
     except Exception as e:
-        print(f"[FORGE SERVICE] Exception triggering partial build: {e}")
-        return False
+        log.exception("Exception building partial: %s", e)
+        return None
