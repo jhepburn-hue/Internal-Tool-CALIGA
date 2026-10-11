@@ -7,7 +7,7 @@ Internal Wavelynx tool for managing reader configuration profiles, running firmw
 - Python 3.14
 - Access to the CALIGA PostgreSQL database
 - Google Cloud access to the config bucket (`gcloud auth application-default login`)
-- For flashing: an RS-485 USB adapter connected to the machine running CALIGA
+- For flashing: Chrome or Edge, with an RS-485 USB adapter plugged into your computer
 
 ## Setup
 
@@ -78,21 +78,26 @@ Only Active and Production configurations can be added to a firmware run.
 ```
 app.py                 App factory, error handling, blueprint registration
 auth.py                Current user and @require_role
-jobs.py                In-process background jobs for builds, syncs and flashing
+jobs.py                Shared background job queue (jobs table + worker threads)
 models.py              SQLAlchemy models
 routes/                Blueprints: main, configurations, testing, failures, tools, jobs
 services/              Jira, Slack, Forge, GCS, PocketBase, OSDP, INI generation and translation
 osdp_library/          Vendored OSDP protocol library
-utils/                 Prox filter math, firmware version helpers
+utils/                 Firmware version, CSN, and error helpers
+static/js/osdp-flasher.js  Browser OSDP flashing over Web Serial
+tools/                 One-off maintenance scripts
 templates/             Jinja templates (Bootstrap 5)
 migrations/            Alembic migrations
 ```
 
 ## Background jobs
 
-Forge builds, PocketBase syncs and flashing can take a minute or more. These requests start a job and return right away. The page polls `/jobs/<id>` for progress and downloads the result when it's ready.
+Forge builds and PocketBase syncs can take a minute or more. These requests add a row to the `jobs` table and return right away. Worker threads claim pending jobs, run them, and save progress, results, and output files. The page polls `/jobs/<id>`, and any CALIGA process can answer, so this works with several server processes or machines.
 
-Jobs are kept in memory for one hour. They're lost if the server restarts, and they only work with a single server process, which is how CALIGA runs today.
+- Each web process starts `JOB_WORKERS` worker threads (default 2) with its first request.
+- For a dedicated worker, run `flask --app app run-worker` (`JOB_WORKER_THREADS`, default 4) and set `JOB_WORKERS=0` on the web processes.
+- Job files go to `gs://<GCS_BUCKET_NAME>/caliga-jobs/<job id>/` (`JOB_GCS_PREFIX`). Set `JOB_STORAGE_DIR` to use a local folder instead.
+- A running job whose worker stops sending heartbeats for 10 minutes is marked failed. Finished jobs and their files are deleted after a day.
 
 ## External services
 
@@ -103,7 +108,7 @@ Jobs are kept in memory for one hour. They're lost if the server restarts, and t
 | Forge | `services/forge_service.py` | Builds profile and firmware binaries. Authenticates with a browser IAP cookie that expires. Refresh `ACTIVE_IAP_COOKIE` when builds start failing. |
 | GCS | `services/gcs_service.py` | Master INIs in `input/`, build output in `output/` and `forge/<email>/<version>/` |
 | PocketBase | `services/pocketbase_service.py` | Token lookup (read-only) and sync (uploads binaries) |
-| OSDP | `services/osdp_service.py` | Finds the reader, raises baud to 115200, and transfers firmware. One flash at a time. |
+| OSDP | `static/js/osdp-flasher.js` | Runs in the browser over Web Serial. Finds the reader, raises baud to 115200, and transfers firmware. |
 
 ## INI generation
 
@@ -119,6 +124,13 @@ The LEAF & Wallet fields (Leaf Si/Cc, Keyset ID, Custom Keyset, ECP DESFire, MiF
 
 ## Flashing
 
-Flashing uses the serial port of the machine running CALIGA, so the reader must be connected to that machine. If the adapter isn't detected automatically, set `OSDP_SERIAL_PORT` in `.env`.
+Flashing runs in your browser, through the RS-485 adapter plugged into your computer, so several people can flash their own readers from one shared CALIGA. It needs Chrome or Edge (Web Serial), and the site must be served over HTTPS or from localhost.
 
-On the Failures dashboard, **Flash Reader** saves the edited INI, forces a fresh Forge build from it, and flashes the result. It stops at the first step that fails.
+1. Click a Flash button and pick the adapter in the browser prompt. After the first time, the browser remembers it.
+2. The server finds or builds the firmware as a job.
+3. The browser downloads it and runs the OSDP steps from `static/js/osdp-flasher.js`: find the reader (baud rates and addresses 0-7), raise the baud rate to 115200, check osdp_ID and osdp_POLL, then send the file in fragments until the reader reports it's rebooting.
+4. The result is saved to the configuration's revision history.
+
+On the Failures dashboard, **Flash Reader** saves the edited INI and forces a fresh Forge build from it before flashing. It stops at the first step that fails.
+
+`osdp_library/` is the original Python OSDP library. The browser flasher mirrors its framing and file transfer, and CALIGA no longer imports it.

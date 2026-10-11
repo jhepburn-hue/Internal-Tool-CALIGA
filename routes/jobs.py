@@ -1,7 +1,7 @@
-import os
+import io
 from flask import Blueprint, jsonify, send_file, abort
 from auth import get_current_user
-from jobs import get_job
+from jobs import get_job, read_job_file
 
 bp = Blueprint('jobs', __name__)
 
@@ -20,10 +20,8 @@ def job_status(job_id):
 
 @bp.route('/jobs/<job_id>/files/<key>')
 def job_file(job_id, key):
-    job = _own_job_or_404(job_id)
-    if key not in job.files:
+    found = read_job_file(_own_job_or_404(job_id), key)
+    if found is None:
         abort(404)
-    path, download_name = job.files[key]
-    if not os.path.exists(path):
-        abort(404)
-    return send_file(path, as_attachment=True, download_name=download_name)
+    data, download_name = found
+    return send_file(io.BytesIO(data), as_attachment=True, download_name=download_name)

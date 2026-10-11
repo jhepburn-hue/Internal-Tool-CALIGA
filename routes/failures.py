@@ -1,11 +1,10 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from models import db, Configuration, ConfigurationTestGroup
 from auth import require_role, get_current_user
-from jobs import start_job, JobError
+from jobs import enqueue, job_handler, JobError
 from services.slack_service import send_alert_qa_notification
-from services.gcs_service import get_failure_ini_content, save_edited_failure_ini
+from services.gcs_service import get_failure_ini_content, save_edited_failure_ini, get_or_build_firmware_bin
 from services.jira_service import assign_jira_ticket, transition_jira_issue_to_complete, jira_browse_url
-from services.osdp_service import flash_firmware_osdp
 from routes.helpers import current_email, log_revision, json_error, get_usable_config
 
 bp = Blueprint('failures', __name__)
@@ -107,7 +106,9 @@ def save_failure_ini(group_id):
     return redirect(url_for('failures.failures_dashboard'))
 
 
-def _flash_and_run_job(job, group_id, ini_content, user_email):
+@job_handler('failure_firmware')
+def _failure_firmware_job(job, group_id, ini_content, user_email):
+    """Saves the edited INI, forces a Forge build from it, and stores the firmware for the browser to flash."""
     group = db.session.get(ConfigurationTestGroup, group_id)
     config = group.configuration or Configuration.query.filter_by(config_name=group.config_name).first()
     if config is None:
@@ -118,34 +119,20 @@ def _flash_and_run_job(job, group_id, ini_content, user_email):
     if not save_edited_failure_ini(config.config_name, ini_content, fw_ver, user_email):
         raise JobError("Couldn't save the edited INI to Cloud Storage. Nothing was built or flashed.")
 
-    def on_progress(percent):
-        job.progress = percent
-        job.message = f"Transferring firmware... ({percent}%)"
+    job.message = "Building firmware from the edited INI with Forge (up to 60s)..."
+    firmware = get_or_build_firmware_bin(config, fw_ver, user_email, job.workdir, force_rebuild=True)
+    if not firmware:
+        raise JobError(f"Forge didn't produce firmware for {config.config_name} ({fw_ver}) within 60s. Nothing was flashed.")
 
-    def on_status(text):
-        job.message = text
-
-    success, msg = flash_firmware_osdp(
-        config, fw_ver, user_email, job.workdir,
-        progress_callback=on_progress, status_callback=on_status, force_rebuild=True
-    )
-
-    log_revision(config.config_name,
-                 f"OSDP Flash with edited INI ({fw_ver}, failure group #{group_id}). "
-                 f"Result: {'Success' if success else 'Failed'} - {msg}",
-                 user_email)
-    db.session.commit()
-
-    if not success:
-        raise JobError(msg)
-    job.progress = 100
-    job.message = msg
+    job.add_file('bin', firmware, f"{config.config_name}_{fw_ver}_firmware.bin")
+    job.result = {"config_name": config.config_name, "fw_version": fw_ver}
+    job.message = "Firmware built from the edited INI."
 
 
 @bp.route('/failures/flash_and_run/<int:group_id>', methods=['POST'])
 @require_role('SET')
 def flash_and_run(group_id):
-    """Saves the edited INI, forces a Forge rebuild from it, and flashes the reader. Stops at the first error."""
+    """Saves the edited INI and rebuilds firmware from it. The browser then flashes the result."""
     group = ConfigurationTestGroup.query.get_or_404(group_id)
     get_usable_config(group.config_name)
 
@@ -153,8 +140,9 @@ def flash_and_run(group_id):
     if not ini_content:
         return json_error("INI content cannot be empty.")
 
-    job = start_job('flash', get_current_user().id, _flash_and_run_job, group_id, ini_content, current_email())
-    return jsonify({"job_id": job.id}), 202
+    job_id = enqueue('failure_firmware', get_current_user().id,
+                     group_id=group_id, ini_content=ini_content, user_email=current_email())
+    return jsonify({"job_id": job_id}), 202
 
 
 @bp.route('/failures/claim/<int:group_id>', methods=['POST'])

@@ -286,20 +286,84 @@
             });
         }
 
-        async function flashReader({ checkUrl, url, data, title = 'OSDP Firmware Flashing' }) {
-            try {
-                await getJson(checkUrl);
-            } catch (err) {
-                alert('RS-485 Port Not Found!\n\n' + err.message);
+        // Uses the one adapter this site was already allowed to use, or asks the user to pick one.
+        async function chooseSerialPort() {
+            const granted = await navigator.serial.getPorts();
+            return granted.length === 1 ? granted[0] : navigator.serial.requestPort();
+        }
+
+        function logFlash(logUrl, fwVersion, success, message, editedIni) {
+            return post(logUrl, { fw_version: fwVersion, success: String(success), message, edited_ini: String(editedIni) })
+                .catch(err => console.warn('Could not record the flash in revision history:', err));
+        }
+
+        /**
+         * Flashes a reader through the RS-485 adapter on this computer (Web Serial, Chrome or Edge).
+         * The server prepares the firmware as a job (prepareUrl), then the browser sends it to the reader.
+         * prepareData can be an object, or an async function that runs after the port is picked.
+         */
+        async function flashReader({ prepareUrl, prepareData, logUrl, editedIni = false, title = 'OSDP Firmware Flashing' }) {
+            if (!('serial' in navigator) || !window.OsdpFlasher) {
+                alert('Flashing needs Chrome or Edge on the computer the RS-485 adapter is plugged into.');
                 return null;
             }
-            return runJob({
-                title, url, data, showProgress: true,
-                onDone: (job, ui) => {
-                    ui.progress(100);
-                    ui.alert('Reader is rebooting! Please wait until reboot is complete.');
-                }
-            });
+
+            // Pick the port first: the browser only allows the port prompt straight after a click.
+            let port;
+            try {
+                port = await chooseSerialPort();
+            } catch (err) {
+                if (err.name !== 'NotFoundError') alert('Could not open the serial port picker: ' + err.message);
+                return null;  // NotFoundError means the user closed the picker.
+            }
+
+            let data;
+            try {
+                data = typeof prepareData === 'function' ? await prepareData() : prepareData;
+            } catch (err) {
+                alert(err.message);
+                return null;
+            }
+
+            const { WebSerialTransport, flashFirmware } = window.OsdpFlasher;
+            const transport = new WebSerialTransport(port);
+            const ui = openJobModal(title, { showProgress: true });
+            let fwVersion = data.fw_version;
+            let attempted = false;
+
+            try {
+                ui.status('Preparing firmware on the server...');
+                const { job_id } = await post(prepareUrl, data);
+                const job = await pollJob(job_id, j => ui.status(j.message));
+                fwVersion = job.result.fw_version || fwVersion;
+
+                const res = await fetch(jobFileUrl(job.id, 'bin'));
+                if (!res.ok) throw new Error(`Could not download the firmware (${res.status}).`);
+                const firmware = new Uint8Array(await res.arrayBuffer());
+
+                attempted = true;
+                const result = await flashFirmware(transport, firmware, {
+                    onStatus: text => ui.status(text),
+                    onProgress: percent => ui.progress(percent)
+                });
+                ui.progress(100);
+                ui.finish(true);
+                ui.status(result.message, 'success');
+                ui.alert('Reader is rebooting! Please wait until reboot is complete.');
+                logFlash(logUrl, fwVersion, true, result.message, editedIni);
+                return result;
+            } catch (err) {
+                // Web Serial reports a port it can't open (e.g. in use by another program) as one of these.
+                const message = ['NetworkError', 'InvalidStateError'].includes(err.name)
+                    ? `Could not open the adapter (${err.message}). Close any other program using it and try again.`
+                    : err.message;
+                ui.finish(false);
+                ui.status(message, 'danger');
+                if (attempted) logFlash(logUrl, fwVersion, false, message, editedIni);
+                return null;
+            } finally {
+                await transport.close();
+            }
         }
 
         return { post, getJson, pollJob, runJob, downloadJob, flashReader, jobFileUrl, el, tokenCard };
@@ -311,18 +375,22 @@
         if (form.dataset.confirm && !confirm(form.dataset.confirm)) e.preventDefault();
     });
 
-    // Any element with data-flash-url starts an OSDP flash for that config and firmware version.
+    // Any element with data-flash-prepare-url flashes that config's firmware from this computer.
     document.addEventListener('click', function (e) {
-        const btn = e.target.closest('[data-flash-url]');
+        const btn = e.target.closest('[data-flash-prepare-url]');
         if (!btn) return;
         e.preventDefault();
         const fwSelect = btn.dataset.fwSelect ? document.getElementById(btn.dataset.fwSelect) : null;
         CALIGA.flashReader({
-            checkUrl: btn.dataset.checkUrl,
-            url: btn.dataset.flashUrl,
-            data: { fw_version: fwSelect ? fwSelect.value : btn.dataset.fwVersion }
+            prepareUrl: btn.dataset.flashPrepareUrl,
+            logUrl: btn.dataset.flashLogUrl,
+            prepareData: { fw_version: fwSelect ? fwSelect.value : btn.dataset.fwVersion }
         });
     });
+    </script>
+    <script type="module">
+        import * as OsdpFlasher from "{{ url_for('static', filename='js/osdp-flasher.js') }}";
+        window.OsdpFlasher = OsdpFlasher;
     </script>
     {% block scripts %}{% endblock %}
 </body>

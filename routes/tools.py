@@ -10,10 +10,9 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from sqlalchemy import func
 from models import db, Configuration, OemSku
 from auth import require_role, get_current_user
-from jobs import start_job, JobError
+from jobs import enqueue, job_handler, JobError
 from services.gcs_service import (get_or_create_ini_file, get_or_build_profile_bin, get_or_build_firmware_bin,
                                   upload_partial_ini_to_gcs)
-from services.osdp_service import flash_firmware_osdp, find_rs485_port
 from services.pocketbase_service import lookup_tokens, sync_tokens
 from services.ini_translator_service import translate_uploaded_ini
 from services.forge_service import generate_partial_ini_content, compile_partial_bin_via_forge
@@ -77,9 +76,9 @@ def hex_int_representer(dumper, data):
 yaml.add_representer(HexInt, hex_int_representer)
 
 
-def _start(kind, fn, *args):
-    job = start_job(kind, get_current_user().id, fn, *args)
-    return jsonify({"job_id": job.id}), 202
+def _start(kind, **params):
+    job_id = enqueue(kind, get_current_user().id, **params)
+    return jsonify({"job_id": job_id}), 202
 
 
 @bp.route('/tools', strict_slashes=False)
@@ -133,17 +132,18 @@ def download_ini(config_name):
     return redirect(url_for('configurations.configuration_details', config_name=config_name))
 
 
-def _binary_job(job, config_id, fw_version, user_email, kind):
+@job_handler('binary')
+def _binary_job(job, config_id, fw_version, user_email, binary):
     config = db.session.get(Configuration, config_id)
-    if kind == 'profile':
+    if binary == 'profile':
         builder, download_name = get_or_build_profile_bin, f"{config.config_name}_{fw_version}.bin"
     else:
         builder, download_name = get_or_build_firmware_bin, f"{config.config_name}_{fw_version}_firmware.bin"
 
-    job.message = f"Looking for an existing {kind} binary, or building one with Forge (up to 60s)..."
+    job.message = f"Looking for an existing {binary} binary, or building one with Forge (up to 60s)..."
     path = builder(config, fw_version, user_email, job.workdir)
     if not path:
-        raise JobError(f"{kind.title()} BIN for {config.config_name} ({fw_version}) could not be found or built within 60s.")
+        raise JobError(f"{binary.title()} BIN for {config.config_name} ({fw_version}) could not be found or built within 60s.")
 
     job.add_file('bin', path, download_name)
     job.message = "Binary ready."
@@ -153,54 +153,30 @@ def _binary_job(job, config_id, fw_version, user_email, kind):
 def download_profile(config_name):
     config = get_usable_config(config_name)
     fw_version = parse_fw_version(request.form.get('fw_version'))
-    return _start('profile_bin', _binary_job, config.id, fw_version, current_email(), 'profile')
+    return _start('binary', config_id=config.id, fw_version=fw_version, user_email=current_email(), binary='profile')
 
 
 @bp.route('/configurations/<config_name>/download-firmware-bin', methods=['POST'])
 def download_firmware(config_name):
     config = get_usable_config(config_name)
     fw_version = parse_fw_version(request.form.get('fw_version'))
-    return _start('firmware_bin', _binary_job, config.id, fw_version, current_email(), 'firmware')
+    return _start('binary', config_id=config.id, fw_version=fw_version, user_email=current_email(), binary='firmware')
 
 
-@bp.route('/configurations/<config_name>/check-rs485')
-def check_rs485(config_name):
-    port = find_rs485_port()
-    if port:
-        return jsonify({"connected": True, "port": port})
-    return jsonify({"connected": False, "error": "No RS-485 port found. Please connect your RS-485 adapter."}), 404
-
-
-def _flash_job(job, config_id, fw_version, user_email):
-    config = db.session.get(Configuration, config_id)
-
-    def on_progress(percent):
-        job.progress = percent
-        job.message = f"Transferring firmware... ({percent}%)"
-
-    def on_status(text):
-        job.message = text
-
-    success, msg = flash_firmware_osdp(config, fw_version, user_email, job.workdir,
-                                       progress_callback=on_progress, status_callback=on_status)
-
-    log_revision(config.config_name,
-                 f"OSDP Flash ({fw_version}). Result: {'Success' if success else 'Failed'} - {msg}",
-                 user_email)
-    db.session.commit()
-
-    if not success:
-        raise JobError(msg)
-    job.progress = 100
-    job.message = msg
-
-
-@bp.route('/configurations/<config_name>/flash', methods=['POST'])
+@bp.route('/configurations/<config_name>/flash-log', methods=['POST'])
 @require_role('SET', 'QA')
-def flash_configuration(config_name):
-    config = get_usable_config(config_name)
+def flash_log(config_name):
+    """Records the result of a flash the browser ran over Web Serial in the revision history."""
+    config = Configuration.query.filter_by(config_name=config_name).first_or_404()
     fw_version = parse_fw_version(request.form.get('fw_version'))
-    return _start('flash', _flash_job, config.id, fw_version, current_email())
+    success = request.form.get('success') == 'true'
+    message = (request.form.get('message') or '').strip()[:500]
+    edited = request.form.get('edited_ini') == 'true'
+
+    label = "OSDP Flash with edited INI" if edited else "OSDP Flash"
+    log_revision(config.config_name, f"{label} ({fw_version}, browser). Result: {'Success' if success else 'Failed'} - {message}")
+    db.session.commit()
+    return jsonify({"logged": True})
 
 
 @bp.route('/configurations/<config_name>/get-tokens')
@@ -211,6 +187,7 @@ def get_tokens(config_name):
     return jsonify(lookup_tokens(config, fw_version))
 
 
+@job_handler('sync_tokens')
 def _sync_tokens_job(job, config_id, fw_version, user_email):
     config = db.session.get(Configuration, config_id)
     job.message = "Building binaries and syncing with PocketBase..."
@@ -223,13 +200,14 @@ def sync_config_tokens(config_name):
     """Builds both binaries and uploads them to PocketBase, creating or overwriting records."""
     config = get_usable_config(config_name)
     fw_version = parse_fw_version(request.form.get('fw_version'))
-    return _start('sync_tokens', _sync_tokens_job, config.id, fw_version, current_email())
+    return _start('sync_tokens', config_id=config.id, fw_version=fw_version, user_email=current_email())
 
 
 # ---------------------------------------------------------------------------
 # Partial configuration generator
 # ---------------------------------------------------------------------------
 
+@job_handler('partial')
 def _partial_job(job, partial_name, partial_ini_text, fw_version, user_email, build_bin):
     ini_filename = f"{partial_name}.ini"
     local_ini = os.path.join(job.workdir, ini_filename)
@@ -280,7 +258,8 @@ def tool_partial_config():
     name_summary = "_".join(changed_keys[:3]) if changed_keys else "override"
     partial_name = re.sub(r'[^A-Za-z0-9_-]', '', f"partial_{name_summary}")
 
-    return _start('partial', _partial_job, partial_name, partial_ini_text, fw_version, current_email(), build_bin)
+    return _start('partial', partial_name=partial_name, partial_ini_text=partial_ini_text,
+                  fw_version=fw_version, user_email=current_email(), build_bin=build_bin)
 
 
 @bp.route('/tools/ini-translator', methods=['GET', 'POST'], strict_slashes=False)
@@ -477,12 +456,14 @@ def _token_item(config_obj, tokens):
     return {"config_name": config_obj.config_name, "status": config_obj.status, **tokens}
 
 
+@job_handler('batch_lookup')
 def _batch_lookup_job(job, config_names, fw_version):
     configs = Configuration.query.filter(Configuration.config_name.in_(config_names)).all()
     job.result = {"items": [_token_item(c, lookup_tokens(c, fw_version)) for c in configs]}
     job.message = f"Looked up tokens for {len(configs)} configuration(s)."
 
 
+@job_handler('batch_sync')
 def _batch_sync_job(job, config_names, fw_version, user_email):
     configs = Configuration.query.filter(Configuration.config_name.in_(config_names)).all()
     job.message = f"Building and syncing {len(configs)} configuration(s)..."
@@ -520,7 +501,7 @@ def batch_tokens_lookup():
     if not names:
         return json_error("Select at least one configuration.")
     fw_version = parse_fw_version(request.form.get('fw_version'))
-    return _start('batch_lookup', _batch_lookup_job, names, fw_version)
+    return _start('batch_lookup', config_names=names, fw_version=fw_version)
 
 
 @bp.route('/tools/batch-tokens/sync', methods=['POST'])
@@ -529,4 +510,4 @@ def batch_tokens_sync():
     if not names:
         return json_error("Select at least one configuration.")
     fw_version = parse_fw_version(request.form.get('fw_version'))
-    return _start('batch_sync', _batch_sync_job, names, fw_version, current_email())
+    return _start('batch_sync', config_names=names, fw_version=fw_version, user_email=current_email())

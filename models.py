@@ -210,3 +210,35 @@ class OemSku(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False) # e.g. "BRIVO"
     sku_id = db.Column(db.Integer, nullable=False)
+
+
+class Job(db.Model):
+    """A queued background job (Forge build, PocketBase sync, ...). Any server process can run or report on it."""
+    __tablename__ = 'jobs'
+    id = db.Column(db.String(32), primary_key=True)
+    kind = db.Column(db.String(50), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='pending', index=True) # pending, running, done, failed
+    message = db.Column(db.Text, nullable=True)
+    progress = db.Column(db.Float, nullable=True)
+    params = db.Column(db.JSON, nullable=False, default=dict)
+    result = db.Column(db.JSON, nullable=True)
+    files = db.Column(db.JSON, nullable=True) # {key: {"path": storage path, "name": download name}}
+    error = db.Column(db.Text, nullable=True)
+    worker = db.Column(db.String(100), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    heartbeat_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "status": self.status,
+            "message": self.message,
+            "progress": self.progress,
+            "result": self.result or {},
+            "files": sorted(self.files or {}),
+            "error": self.error,
+        }

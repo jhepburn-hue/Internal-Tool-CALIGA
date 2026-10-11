@@ -85,8 +85,8 @@
                                 <div class="pe-3">
                                     <button type="button"
                                             class="btn btn-sm btn-outline-info fw-bold text-nowrap"
-                                            data-flash-url="{{ url_for('tools.flash_configuration', config_name=group.config_name) }}"
-                                            data-check-url="{{ url_for('tools.check_rs485', config_name=group.config_name) }}"
+                                            data-flash-prepare-url="{{ url_for('tools.download_firmware', config_name=group.config_name) }}"
+                                            data-flash-log-url="{{ url_for('tools.flash_log', config_name=group.config_name) }}"
                                             data-fw-version="{{ run.fw_version }}">
                                         Flash Reader
                                     </button>

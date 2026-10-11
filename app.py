@@ -14,6 +14,7 @@ from auth import get_current_user
 from services.gcs_client import check_gcs_credentials
 from routes.helpers import wants_json
 from routes import main, configurations, testing, failures, tools, jobs
+import jobs as job_queue
 
 csrf = CSRFProtect()
 migrate = Migrate()
@@ -66,6 +67,20 @@ def create_app():
             current_user=get_current_user(),
             all_users=User.query.order_by(User.role, User.first_name).all()
         )
+
+    @app.before_request
+    def start_job_workers():
+        # Started on the first request rather than at import, so CLI commands like
+        # `flask db upgrade` don't start workers against a table that may not exist yet.
+        job_queue.start_workers(app)
+
+    @app.cli.command('run-worker')
+    def run_worker():
+        """Runs job workers in the foreground (for a dedicated worker process)."""
+        import time
+        job_queue.start_workers(app, int(os.getenv('JOB_WORKER_THREADS', '4')))
+        while True:
+            time.sleep(3600)
 
     @app.before_request
     def require_user():

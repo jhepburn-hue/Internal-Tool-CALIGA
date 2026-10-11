@@ -64,7 +64,7 @@
                                 class="btn btn-sm btn-primary fw-semibold btn-flash-failure"
                                 data-group-id="{{ f.group_id }}"
                                 data-flash-and-run-url="{{ url_for('failures.flash_and_run', group_id=f.group_id) }}"
-                                data-check-url="{{ url_for('tools.check_rs485', config_name=f.config_name) }}">
+                                data-flash-log-url="{{ url_for('tools.flash_log', config_name=f.config_name) }}">
                             Flash Reader
                         </button>
 
@@ -190,22 +190,24 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.querySelectorAll('.btn-flash-failure').forEach(btn => {
-        btn.addEventListener('click', async function() {
+        btn.addEventListener('click', function() {
             const groupId = this.dataset.groupId;
             const drawer = document.querySelector(`.ini-drawer[data-group-id="${groupId}"]`);
 
-            try {
-                await loadIni(drawer);
-            } catch (err) {
-                alert('Could not load the INI to flash: ' + err.message);
-                return;
-            }
-
             CALIGA.flashReader({
                 title: 'Save INI, Rebuild, and Flash',
-                checkUrl: this.dataset.checkUrl,
-                url: this.dataset.flashAndRunUrl,
-                data: { ini_content: document.getElementById('ini_content_' + groupId).value }
+                prepareUrl: this.dataset.flashAndRunUrl,
+                logUrl: this.dataset.flashLogUrl,
+                editedIni: true,
+                // Runs after the port is picked, so the port prompt still follows the click directly.
+                prepareData: async () => {
+                    try {
+                        await loadIni(drawer);
+                    } catch (err) {
+                        throw new Error('Could not load the INI to flash: ' + err.message);
+                    }
+                    return { ini_content: document.getElementById('ini_content_' + groupId).value };
+                }
             });
         });
     });
