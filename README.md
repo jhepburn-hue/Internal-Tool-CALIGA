@@ -73,6 +73,7 @@ Tests use a throwaway SQLite database and never contact Slack, Jira, Forge, GCS,
 | `tests/test_tools_and_jobs.py` | Background job tools, flash logging, YAML automator |
 | `tests/test_forge_and_csn.py` | IAP cookie handling, partial config CSN output |
 | `tests/test_ini_generation.py` | INI-Generator form rows, master INI backfill, generated INI contents |
+| `tests/test_users_admin.py` | Sign-in rules, the admin Users page, deactivation, sign out |
 | `tests/test_job_queue_processes.py` | Jobs queued in one process run once in separate worker processes |
 | `tests/test_osdp_flasher_js.py` | The browser flasher matches osdp_library byte for byte, and handles a simulated reader (needs Node.js) |
 
@@ -82,9 +83,16 @@ One test needs INI-Generator's private files and is skipped without them:
 CALIGA_TEST_INI_PRIVATE_DIR=~/Desktop/INI-Generator/private .venv/bin/python -m pytest
 ```
 
-## Roles
+## Sign-in and users
 
-There's no login yet. The user menu calls `/switch_user/<role>?email=<email>` to act as a team member.
+`AUTH_MODE` picks how people sign in. Only `dev` exists today: the user menu lets anyone act as any active user (`/switch_user/<role>?email=<email>`), and every page shows a warning banner. Use it only on your own machine. Google sign-in or Google IAP will be added as further modes before CALIGA is shared or hosted. They'll sign people in through the same `find_login_user` and `login_user` functions in `auth.py`, so roles and access rules stay the same.
+
+- Only people in the users table who are active can use CALIGA. Anyone else is blocked, and only @wavelynx.com addresses are allowed (`ALLOWED_EMAIL_DOMAIN`).
+- Admins manage users on **Manage Users** (`/admin/users`): add people, change roles, deactivate or reactivate accounts. James H. is the only admin. Admin rights aren't editable in the app.
+- A deactivated user is signed out on their next request.
+- Sign-ins last `SESSION_HOURS` (default 12).
+
+## Roles
 
 | Role  | Can do |
 |-------|--------|

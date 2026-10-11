@@ -78,10 +78,25 @@
                             <span>User: <strong>{{ current_user.first_name }} {{ current_user.last_name_initial }}.</strong></span>
                             <span class="badge badge-navy-green px-2 py-1">{{ current_user.role }}</span>
                         {% else %}
-                            <span>Pick a user</span>
+                            <span>{{ 'Pick a user' if dev_login else 'Not signed in' }}</span>
                         {% endif %}
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
+                        {% if current_user and current_user.is_admin %}
+                            <li><a class="dropdown-item" href="{{ url_for('admin.users') }}">Manage Users</a></li>
+                        {% endif %}
+                        {% if current_user %}
+                            <li>
+                                <form action="{{ url_for('main.logout') }}" method="POST" class="m-0">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="dropdown-item">Sign Out</button>
+                                </form>
+                            </li>
+                            {% if dev_login %}<li><hr class="dropdown-divider"></li>{% endif %}
+                        {% endif %}
+                        {% if dev_login %}
+                            <li><h6 class="dropdown-header text-warning">Development login: act as</h6></li>
+                        {% endif %}
                         {% for role, members in all_users|groupby('role') %}
                             <li><h6 class="dropdown-header">{{ role }}</h6></li>
                             {% for u in members %}
@@ -98,6 +113,14 @@
             </div>
         </div>
     </nav>
+
+    {% if dev_login %}
+    <div class="container">
+        <div class="alert alert-warning py-1 px-3 small mb-3">
+            Development login: anyone using this CALIGA can act as any user. Don't use this mode on a shared server.
+        </div>
+    </div>
+    {% endif %}
 
     <div class="container pb-5">
         {% with messages = get_flashed_messages(with_categories=true) %}

@@ -10,17 +10,18 @@ from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect, CSRFError
 from werkzeug.exceptions import HTTPException
 from models import db, User
-from auth import get_current_user
+from datetime import timedelta
+from auth import get_current_user, auth_mode, is_dev_login
 from services.gcs_client import check_gcs_credentials
 from routes.helpers import wants_json
-from routes import main, configurations, testing, failures, tools, jobs
+from routes import main, configurations, testing, failures, tools, jobs, admin
 import jobs as job_queue
 
 csrf = CSRFProtect()
 migrate = Migrate()
 
 # Pages that work without picking a user first.
-PUBLIC_ENDPOINTS = {'main.home', 'main.switch_user', 'static'}
+PUBLIC_ENDPOINTS = {'main.home', 'main.switch_user', 'main.logout', 'static'}
 
 
 def create_app():
@@ -36,6 +37,9 @@ def create_app():
     if not db_url:
         raise RuntimeError("DATABASE_URL is not set. Add it to .env (see README).")
     check_gcs_credentials()
+    if auth_mode() == 'dev':
+        logging.getLogger(__name__).warning(
+            "AUTH_MODE=dev: anyone who can reach CALIGA can act as any user. Use it only on your own machine.")
 
     app = Flask(__name__)
     app.config['SECRET_KEY'] = secret_key
@@ -53,19 +57,23 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     # Builds and flashes can outlive a normal CSRF token window.
     app.config['WTF_CSRF_TIME_LIMIT'] = None
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=int(os.getenv('SESSION_HOURS', '12')))
 
     db.init_app(app)
     migrate.init_app(app, db)
     csrf.init_app(app)
 
-    for module in (main, configurations, testing, failures, tools, jobs):
+    for module in (main, configurations, testing, failures, tools, jobs, admin):
         app.register_blueprint(module.bp)
 
     @app.context_processor
     def inject_user():
+        dev_login = is_dev_login()
         return dict(
             current_user=get_current_user(),
-            all_users=User.query.order_by(User.role, User.first_name).all()
+            dev_login=dev_login,
+            # The development login menu lists every active user.
+            all_users=User.query.filter_by(is_active=True).order_by(User.role, User.first_name).all() if dev_login else []
         )
 
     @app.before_request

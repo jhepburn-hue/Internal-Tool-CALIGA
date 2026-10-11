@@ -17,6 +17,12 @@ class User(db.Model):
     last_name_initial = db.Column(db.String(5), nullable=False)
     email = db.Column(db.String(150), unique=True, nullable=False)
     role = db.Column(db.String(50), nullable=False)
+    is_admin = db.Column(db.Boolean, nullable=False, default=False) # Can add users and change roles
+    is_active = db.Column(db.Boolean, nullable=False, default=True) # Inactive users can't sign in
+
+    @property
+    def display_name(self):
+        return f"{self.first_name} {self.last_name_initial}."
 
     def __repr__(self):
         return f"<User {self.first_name} {self.last_name_initial} ({self.role})>"

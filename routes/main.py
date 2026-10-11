@@ -1,7 +1,7 @@
-from flask import Blueprint, render_template, session, request, redirect, url_for, flash, abort
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort
 from sqlalchemy import func
 from models import User
-from auth import ROLES
+from auth import ROLES, is_dev_login, login_user, logout_user
 
 bp = Blueprint('main', __name__)
 
@@ -48,12 +48,15 @@ def home():
 
 @bp.route('/switch_user/<role>')
 def switch_user(role):
-    """Utility route to switch the session persona. Optional ?email= picks a specific user in that role."""
+    """Development login: act as a user. Optional ?email= picks a specific user in that role."""
+    if not is_dev_login():
+        abort(404)
+
     role_match = next((r for r in ROLES if r.lower() == role.lower()), None)
     if role_match is None:
         abort(404)
 
-    query = User.query.filter_by(role=role_match)
+    query = User.query.filter_by(role=role_match, is_active=True)
     email = request.args.get('email', '').strip().lower()
     if email:
         query = query.filter(func.lower(User.email) == email)
@@ -63,10 +66,17 @@ def switch_user(role):
         flash(f"No {role_match} user found.", "warning")
         return redirect(url_for('main.home'))
 
-    session['user_id'] = user.id
+    login_user(user)
     flash(f"Now acting as {user.first_name} {user.last_name_initial}. ({user.role}).", "info")
 
     referrer = request.referrer or ''
     if referrer.startswith(request.host_url):
         return redirect(referrer)
+    return redirect(url_for('main.home'))
+
+
+@bp.route('/logout', methods=['POST'])
+def logout():
+    logout_user()
+    flash("You're signed out.", "info")
     return redirect(url_for('main.home'))

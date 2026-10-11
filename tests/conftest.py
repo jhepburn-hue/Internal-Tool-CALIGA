@@ -39,11 +39,13 @@ from models import db, User, Configuration  # noqa: E402
 
 JSON = {"Accept": "application/json"}
 
+# (first name, last initial, email, role, is_admin). The first SET user is the admin, like James H.
 USERS = [
-    ("James", "H", "set@x.com", "SET"),
-    ("Rebecca", "R", "qa@x.com", "QA"),
-    ("Jake", "S", "qa2@x.com", "QA"),
-    ("Anthony", "K", "sales@x.com", "Sales"),
+    ("James", "H", "set@x.com", "SET", True),
+    ("Dennis", "P", "set2@x.com", "SET", False),
+    ("Rebecca", "R", "qa@x.com", "QA", False),
+    ("Jake", "S", "qa2@x.com", "QA", False),
+    ("Anthony", "K", "sales@x.com", "Sales", False),
 ]
 
 
@@ -57,12 +59,12 @@ def app():
 
 @pytest.fixture(autouse=True)
 def fresh_data(app):
-    """Every test starts with only the four test users."""
+    """Every test starts with only the test users."""
     with app.app_context():
         db.session.remove()
         for table in reversed(db.metadata.sorted_tables):
             db.session.execute(table.delete())
-        db.session.add_all(User(first_name=f, last_name_initial=l, email=e, role=r) for f, l, e, r in USERS)
+        db.session.add_all(User(first_name=f, last_name_initial=l, email=e, role=r, is_admin=a) for f, l, e, r, a in USERS)
         db.session.commit()
     yield
 
