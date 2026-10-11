@@ -43,7 +43,7 @@ def failures_dashboard():
 @require_role('SET')
 def failure_ini(group_id):
     """Loads a failure's INI on demand when its drawer is opened."""
-    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    group = db.get_or_404(ConfigurationTestGroup, group_id)
     content = get_failure_ini_content(group.config_name, group.fw_run.fw_version, current_email())
     return jsonify({"content": content})
 
@@ -53,7 +53,7 @@ def failure_ini(group_id):
 def retest_failure(group_id):
     user_email = current_email()
 
-    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    group = db.get_or_404(ConfigurationTestGroup, group_id)
     fw_ver = group.fw_run.fw_version
 
     group.status = 'Untested'
@@ -89,7 +89,7 @@ def retest_failure(group_id):
 def save_failure_ini(group_id):
     user_email = current_email()
 
-    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    group = db.get_or_404(ConfigurationTestGroup, group_id)
     fw_ver = group.fw_run.fw_version
 
     edited_ini = request.form.get('ini_content', '').strip()
@@ -133,7 +133,7 @@ def _failure_firmware_job(job, group_id, ini_content, user_email):
 @require_role('SET')
 def flash_and_run(group_id):
     """Saves the edited INI and rebuilds firmware from it. The browser then flashes the result."""
-    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    group = db.get_or_404(ConfigurationTestGroup, group_id)
     get_usable_config(group.config_name)
 
     ini_content = request.form.get('ini_content', '').strip()
@@ -150,7 +150,7 @@ def flash_and_run(group_id):
 def claim_failure(group_id):
     user_email = current_email()
 
-    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    group = db.get_or_404(ConfigurationTestGroup, group_id)
     group.claimed_user = user_email
     db.session.commit()
 
@@ -169,7 +169,7 @@ def claim_failure(group_id):
 def unclaim_failure(group_id):
     user_email = current_email()
 
-    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    group = db.get_or_404(ConfigurationTestGroup, group_id)
 
     if group.claimed_user != user_email:
         flash("You can only unclaim failures that you currently own.", "warning")

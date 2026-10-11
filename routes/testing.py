@@ -142,7 +142,7 @@ def start_new_run():
 def assign_test_group(group_id):
     user_email = current_email()
 
-    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    group = db.get_or_404(ConfigurationTestGroup, group_id)
     action = request.form.get('action', 'assign')
 
     if action == 'assign':
@@ -161,7 +161,7 @@ def assign_test_group(group_id):
 def submit_test_group(group_id):
     user_email = current_email()
 
-    group = ConfigurationTestGroup.query.get_or_404(group_id)
+    group = db.get_or_404(ConfigurationTestGroup, group_id)
     fw_run = group.fw_run
     back = redirect(url_for('testing.testing_dashboard', fw_version=fw_run.fw_version))
 

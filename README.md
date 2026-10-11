@@ -55,6 +55,33 @@ To change the schema later: edit `models.py`, then run `flask --app app db migra
 
 Open http://127.0.0.1:5000 and pick a user from the menu at the top right. Set `FLASK_DEBUG=1` in `.env` for the debugger and auto-reload on your own machine only.
 
+## Tests
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest
+```
+
+Tests use a throwaway SQLite database and never contact Slack, Jira, Forge, GCS, or PocketBase. Credentials are blanked and the service calls are stubbed.
+
+| File | Covers |
+|---|---|
+| `tests/test_auth_and_pages.py` | User switching, role gates, CSRF, every page for every role |
+| `tests/test_configurations.py` | Create, edit, toggle, archive, alert QA, LEAF and wallet fields |
+| `tests/test_testing_workflow.py` | Firmware runs, submit rules, promotion and demotion |
+| `tests/test_failures.py` | Claim, re-test, lazy INI, edited-INI firmware builds |
+| `tests/test_tools_and_jobs.py` | Background job tools, flash logging, YAML automator |
+| `tests/test_forge_and_csn.py` | IAP cookie handling, partial config CSN output |
+| `tests/test_ini_generation.py` | INI-Generator form rows, master INI backfill, generated INI contents |
+| `tests/test_job_queue_processes.py` | Jobs queued in one process run once in separate worker processes |
+| `tests/test_osdp_flasher_js.py` | The browser flasher matches osdp_library byte for byte, and handles a simulated reader (needs Node.js) |
+
+One test needs INI-Generator's private files and is skipped without them:
+
+```bash
+CALIGA_TEST_INI_PRIVATE_DIR=~/Desktop/INI-Generator/private .venv/bin/python -m pytest
+```
+
 ## Roles
 
 There's no login yet. The user menu calls `/switch_user/<role>?email=<email>` to act as a team member.
