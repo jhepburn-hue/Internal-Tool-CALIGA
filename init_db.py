@@ -11,7 +11,7 @@ def seed_users():
     with app.app_context():
         if User.query.count() == 0:
             team_users = [
-                User(first_name="James", last_name_initial="H", email="jhepburn@wavelynx.com", role="SET"),
+                User(first_name="James", last_name_initial="H", email="jhepburn@wavelynx.com", role="SET", is_admin=True),
                 User(first_name="Dennis", last_name_initial="P", email="dpsimaris@wavelynx.com", role="SET"),
                 User(first_name="Shelby", last_name_initial="O", email="soconnell@wavelynx.com", role="SET"),
                 User(first_name="Jacob", last_name_initial="M", email="jacobm@wavelynx.com", role="SET"),
