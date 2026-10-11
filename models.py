@@ -229,13 +229,15 @@ class Job(db.Model):
     progress = db.Column(db.Float, nullable=True)
     params = db.Column(db.JSON, nullable=False, default=dict)
     result = db.Column(db.JSON, nullable=True)
-    files = db.Column(db.JSON, nullable=True) # {key: {"path": storage path, "name": download name}}
+    files = db.Column(db.JSON, nullable=True) # {key: {"name": download name}}. Bytes live in job_files.
     error = db.Column(db.Text, nullable=True)
     worker = db.Column(db.String(100), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
     started_at = db.Column(db.DateTime, nullable=True)
     heartbeat_at = db.Column(db.DateTime, nullable=True)
     finished_at = db.Column(db.DateTime, nullable=True)
+
+    stored_files = db.relationship('JobFile', backref='job', cascade="all, delete-orphan", lazy=True)
 
     def to_dict(self):
         return {
@@ -248,3 +250,15 @@ class Job(db.Model):
             "files": sorted(self.files or {}),
             "error": self.error,
         }
+
+
+class JobFile(db.Model):
+    """A file a job produced (a built binary, a generated INI). Kept in the database, not GCS, and
+    deleted with its job."""
+    __tablename__ = 'job_files'
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.String(32), db.ForeignKey('jobs.id', ondelete='CASCADE'), nullable=False, index=True)
+    key = db.Column(db.String(50), nullable=False)
+    name = db.Column(db.String(255), nullable=False)
+    data = db.Column(db.LargeBinary, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)

@@ -3,8 +3,8 @@ Shared background job queue for slow work (Forge builds, PocketBase syncs).
 
 A request enqueues a job (a row in the jobs table) and returns its ID right away. Worker
 threads in any CALIGA process claim pending jobs, run them, and record progress, results, and
-output files. The page polls /jobs/<id>, and any process can answer because everything lives in
-the database and job storage (GCS by default).
+output files. The page polls /jobs/<id>, and any process can answer because everything, including
+the files, lives in the database. Jobs never write to GCS themselves.
 
 Workers start with the first web request (JOB_WORKERS threads per process, default 2). For a
 dedicated worker process, run `flask --app app run-worker` and set JOB_WORKERS=0 on the web
@@ -20,8 +20,7 @@ import tempfile
 import threading
 from datetime import timedelta
 from sqlalchemy import update
-from models import db, Job, utcnow
-from services.job_storage import get_job_storage
+from models import db, Job, JobFile, utcnow
 from utils.errors import UserFacingError
 
 log = logging.getLogger(__name__)
@@ -73,10 +72,8 @@ def get_job(job_id, owner_id):
 
 def read_job_file(job, key):
     """Returns (bytes, download_name) for one of the job's files, or None."""
-    entry = (job.files or {}).get(key)
-    if not entry:
-        return None
-    return get_job_storage().read(entry["path"]), entry["name"]
+    stored = JobFile.query.filter_by(job_id=job.id, key=key).first()
+    return (stored.data, stored.name) if stored else None
 
 
 class JobContext:
@@ -126,8 +123,12 @@ class JobContext:
         self._write(force=True)
 
     def add_file(self, key, local_path, download_name):
-        path = get_job_storage().save(self.id, local_path, download_name)
-        self._files[key] = {"path": path, "name": download_name}
+        with open(local_path, 'rb') as f:
+            data = f.read()
+        with self._engine.begin() as conn:
+            conn.execute(JobFile.__table__.insert().values(job_id=self.id, key=key, name=download_name,
+                                                           data=data, created_at=utcnow()))
+        self._files[key] = {"name": download_name}
 
 
 def _claim_next(app):
@@ -205,14 +206,8 @@ def _reap(app):
             job.finished_at = now
 
         old = Job.query.filter(Job.finished_at.isnot(None), Job.finished_at < now - KEEP_FINISHED_FOR).all()
-        storage = get_job_storage()
         for job in old:
-            try:
-                if job.files:
-                    storage.delete_job(job.id)
-            except Exception as e:
-                log.warning("Couldn't delete files for job %s: %s", job.id, e)
-            db.session.delete(job)
+            db.session.delete(job)  # its job_files rows go with it
         db.session.commit()
 
 

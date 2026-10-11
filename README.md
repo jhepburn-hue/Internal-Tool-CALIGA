@@ -130,7 +130,7 @@ Forge builds and PocketBase syncs can take a minute or more. These requests add 
 
 - Each web process starts `JOB_WORKERS` worker threads (default 2) with its first request.
 - For a dedicated worker, run `flask --app app run-worker` (`JOB_WORKER_THREADS`, default 4) and set `JOB_WORKERS=0` on the web processes.
-- Job files go to `gs://<GCS_BUCKET_NAME>/caliga-jobs/<job id>/` (`JOB_GCS_PREFIX`). Set `JOB_STORAGE_DIR` to use a local folder instead.
+- Job files (built binaries, generated INIs) are stored in the database (`job_files`), never in GCS.
 - A running job whose worker stops sending heartbeats for 10 minutes is marked failed. Finished jobs and their files are deleted after a day.
 
 ## External services
@@ -140,17 +140,17 @@ Forge builds and PocketBase syncs can take a minute or more. These requests add 
 | Jira | `services/jira_service.py` | Creates a bug on test failure, assigns on claim, moves to Complete on re-test |
 | Slack | `services/slack_service.py` | Webhook alerts for QA requests, failures and re-tests |
 | Forge | `services/forge_service.py` | Builds profile and firmware binaries. Authenticates with a browser IAP cookie that expires. Refresh `ACTIVE_IAP_COOKIE` when builds start failing. |
-| GCS | `services/gcs_service.py` | Master INIs in `input/`, build output in `output/` and `forge/<email>/<version>/` |
+| GCS | `services/gcs_service.py` | Reads master INIs in `input/` and build output in `output/`. Writes only in `forge/jhepburn@wavelynx.com/` (`FORGE_FOLDER_EMAIL`), whoever is signed in. |
 | PocketBase | `services/pocketbase_service.py` | Token lookup (read-only) and sync (uploads binaries) |
 | OSDP | `static/js/osdp-flasher.js` | Runs in the browser over Web Serial. Finds the reader, raises baud to 115200, and transfers firmware. |
 
 ## INI generation
 
-When a configuration has no master INI in `input/<version>/` (or in your `forge/<email>/` folder), CALIGA generates one from the database with [INI-Generator](https://github.com/jhepburn-hue/INI-Generator). It's installed as a package pinned to a commit in `requirements.txt`. To pick up INI-Generator changes, update that commit and reinstall.
+When a configuration has no master INI in `input/<version>/` (or in the Forge folder, `forge/jhepburn@wavelynx.com/`), CALIGA generates one from the database with [INI-Generator](https://github.com/jhepburn-hue/INI-Generator). It's installed as a package pinned to a commit in `requirements.txt`. To pick up INI-Generator changes, update that commit and reinstall.
 
 `services/ini_generator.py` turns the configuration's fields into INI-Generator's form rows. INI-Generator applies `settings_default.ini` and the customer profiles, and lists anything it couldn't decide. Those warnings are written as comments at the top of the generated INI.
 
-INI-Generator needs `settings_default.ini` and `customer_profiles.json`. CALIGA downloads them once per run from `gs://<GCS_BUCKET_NAME>/private/ini-generator/`, or reads them from the folder in `INI_GENERATOR_PRIVATE_DIR` when that's set. Restart CALIGA after updating either file.
+INI-Generator needs `settings_default.ini` and `customer_profiles.json`. CALIGA reads them from the local folder in `INI_GENERATOR_PRIVATE_DIR` (for example your INI-Generator clone's `private/` folder). They're never stored in GCS. Restart CALIGA after updating either file.
 
 The LEAF & Wallet fields (Leaf Si/Cc, Keyset ID, Custom Keyset, ECP DESFire, MiFare2Go, ECP TCI, Meridian bit count) and BLE Advertising Name feed INI-Generator directly. Blank fields leave those settings at defaults.
 

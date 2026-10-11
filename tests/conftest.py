@@ -28,7 +28,6 @@ for key in ["SLACK_WEBHOOK_URL", "JIRA_USER_EMAIL", "JIRA_API_TOKEN", "JIRA_PROJ
 os.environ.update(
     SECRET_KEY="test-secret",
     DATABASE_URL=f"sqlite:///{TMP}/test.db",
-    JOB_STORAGE_DIR=os.path.join(TMP, "job_files"),
     PB_BASE_URL="http://127.0.0.1:9",
     INI_GENERATOR_PRIVATE_DIR=INI_PRIVATE_DIR,
     LOG_LEVEL="ERROR",

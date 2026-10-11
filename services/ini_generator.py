@@ -6,22 +6,16 @@ same layout as the CSV configuration form. INI-Generator applies settings_defaul
 customer profiles, and its validation checks, and returns the INI plus anything that needs a
 manual review.
 
-INI-Generator needs two private files, settings_default.ini and customer_profiles.json:
-- INI_GENERATOR_PRIVATE_DIR in .env points at a local folder with them, or
-- they're downloaded once per run from gs://<GCS_BUCKET_NAME>/<INI_GENERATOR_GCS_PREFIX>.
+INI-Generator needs two private files, settings_default.ini and customer_profiles.json, in the
+local folder named by INI_GENERATOR_PRIVATE_DIR. They're never read from or written to GCS.
 """
 import os
 import logging
-import tempfile
 import threading
-from google.api_core.exceptions import NotFound
-from services.gcs_client import get_gcs_client, GCS_BUCKET_NAME
 from utils.errors import UserFacingError
 
 log = logging.getLogger(__name__)
 
-GCS_PREFIX = os.getenv('INI_GENERATOR_GCS_PREFIX', 'private/ini-generator/')
-CACHE_DIR = os.path.join(tempfile.gettempdir(), 'caliga_ini_generator')
 DEFAULTS_FILE = 'settings_default.ini'
 PROFILES_FILE = 'customer_profiles.json'
 
@@ -47,40 +41,17 @@ class IniGenerationError(UserFacingError):
     pass
 
 
-def _download_private_files():
-    client = get_gcs_client()
-    if client is None:
-        raise IniGenerationError(
-            "Can't generate INIs: Google Cloud Storage is unavailable and INI_GENERATOR_PRIVATE_DIR isn't set."
-        )
-
-    os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
-    bucket = client.bucket(GCS_BUCKET_NAME)
-
-    for name in (DEFAULTS_FILE, PROFILES_FILE):
-        path = os.path.join(CACHE_DIR, name)
-        try:
-            bucket.blob(GCS_PREFIX + name).download_to_filename(path)
-            log.info("Downloaded gs://%s/%s%s", GCS_BUCKET_NAME, GCS_PREFIX, name)
-        except NotFound:
-            # Don't let a stale copy from an earlier run stand in for a missing file.
-            if os.path.exists(path):
-                os.remove(path)
-            if name == DEFAULTS_FILE:
-                raise IniGenerationError(
-                    f"Can't generate INIs: gs://{GCS_BUCKET_NAME}/{GCS_PREFIX}{DEFAULTS_FILE} doesn't exist. "
-                    "Upload it, or set INI_GENERATOR_PRIVATE_DIR in .env."
-                )
-            log.warning("%s not found in GCS. Customer and partner apps won't be generated.", name)
-    return CACHE_DIR
-
-
 def _private_dir():
     local_dir = os.getenv('INI_GENERATOR_PRIVATE_DIR')
     if not local_dir:
-        return _download_private_files()
+        raise IniGenerationError(
+            "Can't generate INIs: set INI_GENERATOR_PRIVATE_DIR in .env to the folder with INI-Generator's "
+            "settings_default.ini and customer_profiles.json."
+        )
     if not os.path.exists(os.path.join(local_dir, DEFAULTS_FILE)):
         raise IniGenerationError(f"Can't generate INIs: {DEFAULTS_FILE} isn't in INI_GENERATOR_PRIVATE_DIR ({local_dir}).")
+    if not os.path.exists(os.path.join(local_dir, PROFILES_FILE)):
+        log.warning("%s isn't in %s. Customer and partner apps won't be generated.", PROFILES_FILE, local_dir)
     return local_dir
 
 

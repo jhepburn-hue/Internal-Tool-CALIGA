@@ -4,6 +4,7 @@ from auth import require_role, get_current_user
 from jobs import enqueue, job_handler, JobError
 from services.slack_service import send_alert_qa_notification
 from services.gcs_service import get_failure_ini_content, save_edited_failure_ini, get_or_build_firmware_bin
+from services.gcs_client import forge_root
 from services.jira_service import assign_jira_ticket, transition_jira_issue_to_complete, jira_browse_url
 from routes.helpers import current_email, log_revision, json_error, get_usable_config
 
@@ -99,7 +100,7 @@ def save_failure_ini(group_id):
         return redirect(url_for('failures.failures_dashboard'))
 
     if save_edited_failure_ini(group.config_name, edited_ini, fw_ver, user_email):
-        flash(f"Updated INI for '{group.config_name}' saved to Forge bucket (forge/{user_email}/{fw_ver}/)!", "success")
+        flash(f"Updated INI for '{group.config_name}' saved to Forge bucket ({forge_root()}{fw_ver}/)!", "success")
     else:
         flash("Failed to save edited INI to Cloud Storage.", "danger")
 

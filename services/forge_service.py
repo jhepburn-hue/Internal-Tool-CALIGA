@@ -4,7 +4,7 @@ import logging
 import requests
 from datetime import datetime, timezone
 from pathlib import Path
-from services.gcs_client import get_gcs_client
+from services.gcs_client import get_gcs_client, forge_root
 from utils.versions import normalize_fw_version
 from utils.errors import UserFacingError
 from utils.csn import CSN_OFF, CSN_NO_OVERRIDE, CSN_32_MSB, CSN_56_LSB, CSN_56_MSB
@@ -183,7 +183,7 @@ def generate_partial_ini_content(form_data):
 def compile_partial_bin_via_forge(partial_name, fw_version, user_email, output_dir, source="user", gitlab_ref="master", timeout_s=120):
     """
     1. Triggers Forge compilation job for a partial configuration profile.
-    2. Polls GCS (forge/{user_email}/v{version}/partials/) until the compiled binary arrives.
+    2. Polls GCS (forge/<FORGE_FOLDER_EMAIL>/v{version}/partials/) until the compiled binary arrives.
     3. Downloads it into output_dir and returns the local path, or None on failure.
     Raises ForgeAuthError when the IAP cookie is missing or rejected.
     """
@@ -198,7 +198,6 @@ def compile_partial_bin_via_forge(partial_name, fw_version, user_email, output_d
     build_id = _firmware_build_id(version_str)
     if not build_id:
         return None
-    user_email_clean = user_email.lower().strip()
 
     payload = {
         "version": version_str,
@@ -233,7 +232,7 @@ def compile_partial_bin_via_forge(partial_name, fw_version, user_email, output_d
             return None
 
         bucket_name = os.getenv("FORGE_GCS_BUCKET", "wavelynx_apex_config")
-        prefix_path = f"forge/{user_email_clean}/{version_str}/partials/"
+        prefix_path = f"{forge_root()}{version_str}/partials/"
         clean_stem = stem.lower().strip()
 
         start_time = time.time()

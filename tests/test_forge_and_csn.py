@@ -62,3 +62,62 @@ def test_partial_csn_codes_and_keys():
     assert "mifare_classic_format = 0x3801" in text
     assert "mifare_desfire_format = 0x3800" in text and "mifare_ultralight_format = 0x3800" in text
     assert "pico15693_format = 0x2001" in text
+
+
+@pytest.mark.parametrize("path, allowed", [
+    ("forge/jhepburn@wavelynx.com/v5.4.10/CQU1.ini", True),
+    ("forge/jhepburn@wavelynx.com/v5.4.10/partials/partial_ble.ini", True),
+    ("forge/qa@x.com/v5.4.10/CQU1.ini", False),            # the signed-in user's own folder isn't used
+    ("private/ini-generator/settings_default.ini", False),
+    ("caliga-jobs/abc/x.bin", False),
+    ("input/v5.4.10/CQU1.ini", False),
+    ("output/v5.4.10/CQU1.bin", False),
+    ("forge/jhepburn@wavelynx.com/../other@x.com/x.ini", False),
+    ("forge/jhepburn@wavelynx.com/", False),
+])
+def test_gcs_writes_stay_inside_the_forge_folder(path, allowed):
+    from services.gcs_client import check_forge_path, GcsWriteRefused
+    if allowed:
+        assert check_forge_path(path) == path
+    else:
+        with pytest.raises(GcsWriteRefused):
+            check_forge_path(path)
+
+
+def test_uploads_go_to_james_folder_whoever_is_signed_in(monkeypatch):
+    written = []
+
+    class FakeBlob:
+        def __init__(self, name):
+            self.name = name
+
+        def upload_from_string(self, *a, **k):
+            written.append(self.name)
+
+    class FakeBucket:
+        def blob(self, name):
+            return FakeBlob(name)
+
+    class FakeClient:
+        def bucket(self, name):
+            return FakeBucket()
+
+    monkeypatch.setattr(gcs, "get_gcs_client", lambda: FakeClient())
+    gcs.upload_partial_ini_to_gcs("partial_ble.ini", "[ble]\nenabled = true", "v5.4.10", "qa@x.com")
+    gcs.save_edited_failure_ini("CQU1", "[av]", "v5.4.10", "sales@x.com")
+    assert written == ["forge/jhepburn@wavelynx.com/v5.4.10/partials/partial_ble.ini",
+                       "forge/jhepburn@wavelynx.com/v5.4.10/CQU1.ini"]
+
+
+def test_every_gcs_upload_goes_through_the_guard():
+    """No module may call the GCS upload methods directly, except the guard itself."""
+    import pathlib
+    from conftest import ROOT
+    offenders = []
+    for path in pathlib.Path(ROOT).glob("**/*.py"):
+        if any(part in (".venv", "venv", "tests", "migrations") for part in path.parts):
+            continue
+        text = path.read_text()
+        if ("upload_from_" in text or ".compose(" in text or ".rewrite(" in text) and path.name != "gcs_client.py":
+            offenders.append(str(path.relative_to(ROOT)))
+    assert offenders == []

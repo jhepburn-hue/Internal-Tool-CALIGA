@@ -2,7 +2,7 @@ import os
 import time
 import logging
 from datetime import datetime, timezone
-from services.gcs_client import get_gcs_client, GCS_BUCKET_NAME
+from services.gcs_client import get_gcs_client, write_to_forge, forge_root, GCS_BUCKET_NAME
 from services.ini_generator import generate_ini_from_config
 from services.forge_service import trigger_forge_build
 from utils.versions import normalize_fw_version
@@ -59,8 +59,8 @@ def get_or_create_ini_file(config, fw_version, user_email, output_dir):
     candidate_prefixes = [
         f"input/{ver_with_v}/",
         f"input/{ver_no_v}/",
-        f"forge/{user_email}/{ver_with_v}/",
-        f"forge/{user_email}/{ver_no_v}/",
+        f"{forge_root()}{ver_with_v}/",
+        f"{forge_root()}{ver_no_v}/",
     ]
 
     client = get_gcs_client()
@@ -81,11 +81,10 @@ def get_or_create_ini_file(config, fw_version, user_email, output_dir):
     generate_ini_from_config(config, local_path)
 
     if client:
-        forge_upload_path = f"forge/{user_email}/{ver_with_v}/{file_name}"
+        forge_upload_path = f"{forge_root()}{ver_with_v}/{file_name}"
         try:
             bucket = client.bucket(GCS_BUCKET_NAME)
-            blob = bucket.blob(forge_upload_path)
-            blob.upload_from_filename(local_path)
+            write_to_forge(bucket, forge_upload_path, local_path=local_path)
             log.info("Uploaded generated INI to Forge bucket -> gs://%s/%s", GCS_BUCKET_NAME, forge_upload_path)
         except Exception as e:
             log.exception("Could not upload to Forge bucket: %s", e)
@@ -98,7 +97,7 @@ def _get_or_build_binary(config, fw_version, user_email, output_dir, targets, lo
     """
     Shared flow for profile and firmware binaries.
     Normal mode: return an existing binary from output/ or forge/, else build one.
-    force_rebuild: skip existing binaries, build from the INI already in forge/{user_email}/,
+    force_rebuild: skip existing binaries, build from the INI already in forge/<FORGE_FOLDER_EMAIL>/,
     and only accept a binary written after the build was triggered.
     """
     ver_with_v, ver_no_v = normalize_fw_version(fw_version)
@@ -107,7 +106,7 @@ def _get_or_build_binary(config, fw_version, user_email, output_dir, targets, lo
 
     versions = [ver_with_v, ver_no_v]
     output_prefixes = [f"output/{v}/" for v in versions]
-    forge_prefixes = [f"forge/{user_email}/{v}/" for v in versions]
+    forge_prefixes = [f"{forge_root()}{v}/" for v in versions]
 
     client = get_gcs_client()
     if not client:
@@ -188,7 +187,7 @@ def get_or_build_firmware_bin(config, fw_version, user_email, output_dir, timeou
 def upload_partial_ini_to_gcs(ini_filename, ini_content, fw_version, user_email):
     """
     Uploads a partial .ini file directly to:
-    forge/{user_email}/{fw_version}/partials/{ini_filename}
+    forge/<FORGE_FOLDER_EMAIL>/{fw_version}/partials/{ini_filename}
     """
     client = get_gcs_client()
     if not client:
@@ -199,9 +198,8 @@ def upload_partial_ini_to_gcs(ini_filename, ini_content, fw_version, user_email)
 
     try:
         bucket = client.bucket(GCS_BUCKET_NAME)
-        gcs_path = f"forge/{user_email}/{ver_with_v}/partials/{ini_filename}"
-        blob = bucket.blob(gcs_path)
-        blob.upload_from_string(ini_content, content_type="text/plain")
+        gcs_path = f"{forge_root()}{ver_with_v}/partials/{ini_filename}"
+        write_to_forge(bucket, gcs_path, text=ini_content)
         log.info("Uploaded partial INI to gs://%s/%s", GCS_BUCKET_NAME, gcs_path)
         return gcs_path
     except Exception as e:
@@ -218,7 +216,7 @@ def get_failure_ini_content(config_name, fw_version, user_email):
     file_name = f"{config_name}.ini"
 
     candidate_prefixes = [
-        f"forge/{user_email}/{ver_with_v}/",
+        f"{forge_root()}{ver_with_v}/",
         f"input/{ver_with_v}/"
     ]
 
@@ -241,7 +239,7 @@ def get_failure_ini_content(config_name, fw_version, user_email):
 def save_edited_failure_ini(config_name, ini_content, fw_version, user_email):
     """
     Saves an edited failure INI into the user's Forge bucket:
-    forge/{user_email}/{fw_version}/{config_name}.ini
+    forge/<FORGE_FOLDER_EMAIL>/{fw_version}/{config_name}.ini
     """
     client = get_gcs_client()
     if not client:
@@ -249,12 +247,11 @@ def save_edited_failure_ini(config_name, ini_content, fw_version, user_email):
         return False
 
     ver_with_v, _ = normalize_fw_version(fw_version)
-    gcs_path = f"forge/{user_email}/{ver_with_v}/{config_name}.ini"
+    gcs_path = f"{forge_root()}{ver_with_v}/{config_name}.ini"
 
     try:
         bucket = client.bucket(GCS_BUCKET_NAME)
-        blob = bucket.blob(gcs_path)
-        blob.upload_from_string(ini_content, content_type="text/plain")
+        write_to_forge(bucket, gcs_path, text=ini_content)
         log.info("Saved edited failure INI -> gs://%s/%s", GCS_BUCKET_NAME, gcs_path)
         return True
     except Exception as e:
