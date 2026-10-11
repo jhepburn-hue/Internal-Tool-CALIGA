@@ -8,7 +8,7 @@ const unhex = h => Uint8Array.from(Buffer.from(h, 'hex'));
 let pass = 0, fail = 0;
 const check = (name, cond, detail = '') => { cond ? pass++ : fail++; console.log(`${cond ? 'PASS' : 'FAIL'} ${name}${cond ? '' : '  ' + detail}`); };
 
-// 1. CRC and command encoding match osdp_library byte for byte
+// 1. CRC and command encoding match the recorded reference frames byte for byte
 for (const c of ref.crc) check(`crc ${c.data.slice(0, 12) || '(empty)'}`, m.crc16(unhex(c.data)) === c.crc, `${m.crc16(unhex(c.data))} vs ${c.crc}`);
 for (const c of ref.commands) {
     let data = c.data !== undefined ? [...unhex(c.data)] : [];
@@ -18,7 +18,7 @@ for (const c of ref.commands) {
     const got = hex(m.encodeCommand(c.address, c.seq, code, data));
     check(`encode ${c.name}`, got === c.hex, `\n   js ${got}\n   py ${c.hex}`);
 }
-// 2. Reply decoding of osdp_library-built replies
+// 2. Reply decoding of the recorded reference replies
 for (const r of ref.replies) {
     const d = m.decodeReply(unhex(r.hex));
     check(`decode ${r.name}`, d.isReply && d.address === r.address && d.sequence === r.seq && d.code === r.code);

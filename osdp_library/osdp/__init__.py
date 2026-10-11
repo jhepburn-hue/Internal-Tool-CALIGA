@@ -1,1 +1,0 @@
-"""OSDP protocol implementation."""

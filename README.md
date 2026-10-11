@@ -75,7 +75,7 @@ Tests use a throwaway SQLite database and never contact Slack, Jira, Forge, GCS,
 | `tests/test_ini_generation.py` | INI-Generator form rows, master INI backfill, generated INI contents |
 | `tests/test_users_admin.py` | Sign-in rules, the admin Users page, deactivation, sign out |
 | `tests/test_job_queue_processes.py` | Jobs queued in one process run once in separate worker processes |
-| `tests/test_osdp_flasher_js.py` | The browser flasher matches osdp_library byte for byte, and handles a simulated reader (needs Node.js) |
+| `tests/test_osdp_flasher_js.py` | The browser flasher matches recorded OSDP reference frames byte for byte, and handles a simulated reader (needs Node.js) |
 
 One test needs INI-Generator's private files and is skipped without them:
 
@@ -117,7 +117,6 @@ jobs.py                Shared background job queue (jobs table + worker threads)
 models.py              SQLAlchemy models
 routes/                Blueprints: main, configurations, testing, failures, tools, jobs
 services/              Jira, Slack, Forge, GCS, PocketBase, OSDP, INI generation and translation
-osdp_library/          Vendored OSDP protocol library
 utils/                 Firmware version, CSN, and error helpers
 static/js/osdp-flasher.js  Browser OSDP flashing over Web Serial
 tools/                 One-off maintenance scripts
@@ -168,4 +167,3 @@ Flashing runs in your browser, through the RS-485 adapter plugged into your comp
 
 On the Failures dashboard, **Flash Reader** saves the edited INI and forces a fresh Forge build from it before flashing. It stops at the first step that fails.
 
-`osdp_library/` is the original Python OSDP library. The browser flasher mirrors its framing and file transfer, and CALIGA no longer imports it.

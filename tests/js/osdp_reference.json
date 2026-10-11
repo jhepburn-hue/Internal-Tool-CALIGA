@@ -1,0 +1,112 @@
+{
+ "crc": [
+  {
+   "data": "",
+   "crc": 7439
+  },
+  {
+   "data": "53",
+   "crc": 42506
+  },
+  {
+   "data": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+   "crc": 15502
+  },
+  {
+   "data": "530108000460",
+   "crc": 186
+  }
+ ],
+ "commands": [
+  {
+   "name": "poll a0 s0",
+   "address": 0,
+   "seq": 0,
+   "code": 96,
+   "data": "",
+   "hex": "530008000460ebaa"
+  },
+  {
+   "name": "poll a1 s2",
+   "address": 1,
+   "seq": 2,
+   "code": 96,
+   "data": "",
+   "hex": "530108000660d866"
+  },
+  {
+   "name": "id a7 s3",
+   "address": 7,
+   "seq": 3,
+   "code": 97,
+   "data": "00",
+   "hex": "53070900076100d1f7"
+  },
+  {
+   "name": "comset a1 115200 s1",
+   "address": 1,
+   "seq": 1,
+   "comset": [
+    1,
+    115200
+   ],
+   "hex": "53010d00056e0100c201008307"
+  },
+  {
+   "name": "ft a1 s2",
+   "address": 1,
+   "seq": 2,
+   "ft": [
+    70000,
+    2048,
+    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324"
+   ],
+   "hex": "53013800067c0170110100000800002500000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223247b1e"
+  },
+  {
+   "name": "ft finishing a3 s1",
+   "address": 3,
+   "seq": 1,
+   "ft": [
+    70000,
+    70000,
+    ""
+   ],
+   "hex": "53031300057c01701101007011010000004716"
+  }
+ ],
+ "replies": [
+  {
+   "name": "ack",
+   "address": 1,
+   "seq": 1,
+   "code": 64,
+   "data": "",
+   "hex": "5381080005403935"
+  },
+  {
+   "name": "ftstat ok max 256",
+   "address": 1,
+   "seq": 2,
+   "code": 122,
+   "data": "01000000000001",
+   "hex": "53810f00067a010000000000015d3c"
+  },
+  {
+   "name": "ftstat abort",
+   "address": 2,
+   "seq": 3,
+   "code": 122,
+   "data": "000000ffff0000",
+   "hex": "53820f00077a000000ffff000061fe"
+  },
+  {
+   "name": "nak",
+   "address": 0,
+   "seq": 1,
+   "code": 65,
+   "data": "03",
+   "hex": "5380090005410355b3"
+  }
+ ]
+}

@@ -1,7 +1,7 @@
 /**
  * OSDP firmware flashing from the browser over Web Serial (Chrome and Edge).
  *
- * Mirrors osdp_library (osdp_traffic_conductor.py, file_transfer_manager.py): plain-text OSDP
+ * Mirrors the original Python OSDP library CALIGA used to flash from the server: plain-text OSDP
  * with CRC, sequence numbers 0 -> 1 -> 2 -> 3 -> 1, a 0xFF line-mark byte before each command,
  * reader discovery across baud rates and addresses 0-7, COMSET to 115200, an osdp_ID + osdp_POLL
  * health check, then osdp_FILETRANSFER fragments until the reader reports it's rebooting.
@@ -33,7 +33,7 @@ export class OsdpTimeoutError extends OsdpError {}
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-/** CRC-16/CCITT with initial value 0x1D0F, as OSDP specifies (crcmod 0x11021, init 0x1D0F). */
+/** CRC-16/CCITT (polynomial 0x1021) with initial value 0x1D0F, as OSDP specifies. */
 export function crc16(bytes) {
     let crc = 0x1D0F;
     for (const byte of bytes) {
