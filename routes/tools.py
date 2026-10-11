@@ -2,6 +2,7 @@ import io
 import os
 import re
 import datetime
+import shutil
 import tempfile
 import concurrent.futures
 import yaml
@@ -16,6 +17,7 @@ from services.osdp_service import flash_firmware_osdp, find_rs485_port
 from services.pocketbase_service import lookup_tokens, sync_tokens
 from services.ini_translator_service import translate_uploaded_ini
 from services.forge_service import generate_partial_ini_content, compile_partial_bin_via_forge
+from utils.errors import UserFacingError
 from routes.helpers import current_email, get_usable_config, json_error, log_revision, send_and_cleanup
 from utils.versions import parse_fw_version
 
@@ -117,7 +119,12 @@ def download_ini(config_name):
     fw_version = parse_fw_version(request.args.get('fw_version'))
 
     workdir = tempfile.mkdtemp(prefix="caliga_ini_")
-    file_path = get_or_create_ini_file(config, fw_version, current_email(), workdir)
+    try:
+        file_path = get_or_create_ini_file(config, fw_version, current_email(), workdir)
+    except UserFacingError as e:
+        shutil.rmtree(workdir, ignore_errors=True)
+        flash(str(e), "danger")
+        return redirect(url_for('configurations.configuration_details', config_name=config_name))
 
     if file_path and os.path.exists(file_path):
         return send_and_cleanup(file_path, f"{config.config_name}_{fw_version}.ini", workdir)
@@ -240,7 +247,13 @@ def _partial_job(job, partial_name, partial_ini_text, fw_version, user_email, bu
         return
 
     job.message = "Building Profile BIN with Forge (up to 120s)..."
-    bin_path = compile_partial_bin_via_forge(partial_name, fw_version, user_email, job.workdir)
+    try:
+        bin_path = compile_partial_bin_via_forge(partial_name, fw_version, user_email, job.workdir)
+    except UserFacingError as e:
+        job.result = {"warning": f"Partial INI uploaded, but no Profile BIN was built. {e}"}
+        job.message = "Finished."
+        return
+
     if bin_path:
         job.add_file('bin', bin_path, f"{partial_name}_{fw_version}.bin")
         job.result = {"note": "Partial INI uploaded and Profile BIN built."}

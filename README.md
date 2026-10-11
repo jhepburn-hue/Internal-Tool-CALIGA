@@ -105,6 +105,16 @@ Jobs are kept in memory for one hour. They're lost if the server restarts, and t
 | PocketBase | `services/pocketbase_service.py` | Token lookup (read-only) and sync (uploads binaries) |
 | OSDP | `services/osdp_service.py` | Finds the reader, raises baud to 115200, and transfers firmware. One flash at a time. |
 
+## INI generation
+
+When a configuration has no master INI in `input/<version>/` (or in your `forge/<email>/` folder), CALIGA generates one from the database with [INI-Generator](https://github.com/jhepburn-hue/INI-Generator). It's installed as a package pinned to a commit in `requirements.txt`. To pick up INI-Generator changes, update that commit and reinstall.
+
+`services/ini_generator.py` turns the configuration's fields into INI-Generator's form rows. INI-Generator applies `settings_default.ini` and the customer profiles, and lists anything it couldn't decide. Those warnings are written as comments at the top of the generated INI.
+
+INI-Generator needs `settings_default.ini` and `customer_profiles.json`. CALIGA downloads them once per run from `gs://<GCS_BUCKET_NAME>/private/ini-generator/`, or reads them from the folder in `INI_GENERATOR_PRIVATE_DIR` when that's set. Restart CALIGA after updating either file.
+
+The LEAF & Wallet fields (Leaf Si/Cc, Keyset ID, Custom Keyset, ECP DESFire, MiFare2Go, ECP TCI, Meridian bit count) and BLE Advertising Name feed INI-Generator directly. Blank fields leave those settings at defaults.
+
 ## Flashing
 
 Flashing uses the serial port of the machine running CALIGA, so the reader must be connected to that machine. If the adapter isn't detected automatically, set `OSDP_SERIAL_PORT` in `.env`.

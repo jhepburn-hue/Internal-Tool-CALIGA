@@ -5,6 +5,7 @@ import logging
 import requests
 from urllib.parse import quote
 from services.gcs_service import get_or_build_profile_bin, get_or_build_firmware_bin
+from utils.errors import UserFacingError
 from utils.versions import normalize_fw_version
 
 log = logging.getLogger(__name__)
@@ -144,7 +145,11 @@ def sync_tokens(config, fw_version, user_email, output_dir):
     results = {}
     for kind, (name, build) in builders.items():
         log.info("Retrieving/building %s...", name)
-        bin_path = build(config, fw_version, user_email, output_dir)
+        try:
+            bin_path = build(config, fw_version, user_email, output_dir)
+        except UserFacingError as e:
+            results[kind] = _entry(name, error=str(e))
+            continue
         if not bin_path:
             results[kind] = _entry(name, error="Binary could not be found or built.")
             continue

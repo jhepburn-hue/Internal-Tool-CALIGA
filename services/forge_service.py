@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from services.gcs_client import get_gcs_client
 from utils.versions import normalize_fw_version
+from utils.errors import UserFacingError
+from utils.csn import CSN_OFF, CSN_NO_OVERRIDE, CSN_32_MSB, CSN_56_LSB, CSN_56_MSB
 
 log = logging.getLogger(__name__)
 
@@ -17,6 +19,33 @@ FIRMWARE_IDS = {
     "v5.4.11": "422313",
     "v5.4.10": "371132",
 }
+
+
+class ForgeAuthError(UserFacingError):
+    """Forge rejected the IAP cookie, or no cookie is configured. The message is shown to the user."""
+
+
+IAP_EXPIRED_MESSAGE = (
+    "Forge rejected the IAP cookie, so no build was started. The cookie has probably expired. "
+    "Open Forge in your browser, copy a fresh __Host-GCP_IAP_AUTH_TOKEN cookie into ACTIVE_IAP_COOKIE "
+    "in .env, then restart CALIGA."
+)
+
+
+def _require_iap_cookie():
+    if not ACTIVE_IAP_COOKIE:
+        raise ForgeAuthError("ACTIVE_IAP_COOKIE is not set in .env, so CALIGA can't start Forge builds.")
+
+
+def _check_iap_auth(response):
+    """IAP answers an expired cookie with 401/403, or a redirect to Google sign-in instead of a build job."""
+    location = response.headers.get("Location", "")
+    redirected_to_sign_in = response.status_code in (301, 302, 303, 307) and (
+        "accounts.google.com" in location or "/_gcp_iap/" in location
+    )
+    if response.status_code in (401, 403) or redirected_to_sign_in:
+        log.error("Forge rejected the IAP cookie (status %s, Location: %s).", response.status_code, location[:120])
+        raise ForgeAuthError(IAP_EXPIRED_MESSAGE)
 
 
 def _get_auth_headers():
@@ -45,10 +74,9 @@ def _firmware_build_id(version_str):
 def trigger_forge_build(config_name, fw_version, source="user", gitlab_ref="master"):
     """
     Triggers a build job on Forge via POST to /configs/build.
+    Raises ForgeAuthError when the IAP cookie is missing or rejected.
     """
-    if not ACTIVE_IAP_COOKIE:
-        log.warning("ACTIVE_IAP_COOKIE missing. Skipping Forge trigger.")
-        return False
+    _require_iap_cookie()
 
     url = f"{FORGE_BASE_URL.rstrip('/')}/configs/build"
     headers = _get_auth_headers()
@@ -78,6 +106,7 @@ def trigger_forge_build(config_name, fw_version, source="user", gitlab_ref="mast
     try:
         log.info("Submitting build for %s (%s) to Forge...", stem, version_str)
         response = requests.post(url, data=payload, headers=headers, timeout=30, allow_redirects=False)
+        _check_iap_auth(response)
 
         if response.status_code in [200, 201, 302, 303]:
             log.info("Build trigger submitted (Build Job: %s)", response.headers.get("Location", ""))
@@ -85,6 +114,8 @@ def trigger_forge_build(config_name, fw_version, source="user", gitlab_ref="mast
 
         log.error("Forge returned status %s: %s", response.status_code, response.text[:300])
         return False
+    except ForgeAuthError:
+        raise
     except Exception as e:
         log.exception("Exception triggering Forge build: %s", e)
         return False
@@ -120,29 +151,31 @@ def generate_partial_ini_content(form_data):
                 current_section = sec
             ini_lines.append(f"{ini_key} = {out_val}")
 
+    # Same keys per row as INI-Generator's CSN_ROWS.
     csn_keys = {
-        "csn_mfc": "mifare_classic_format",
-        "csn_ev1ev2": "mifare_desfire_format",
-        "csn_iclass": "iso14443a_cl1_format",
-        "csn_iso15693": "iso15693_format",
-        "csn_iso14443a": "iso14443a_cl2_format"
+        "csn_mfc": ["mifare_classic_format"],
+        "csn_ev1ev2": ["mifare_desfire_format", "mifare_plus_format", "mifare_ultralight_format"],
+        "csn_iclass": ["pico15693_format"],
+        "csn_iso15693": ["iso15693_format"],
+        "csn_iso14443a": ["iso14443a_cl1_format", "iso14443a_cl2_format", "iso14443b_format", "felica_format"],
     }
 
     csn_val_map = {
-        "off": "0xFFFF",
-        "on": "0x0000",
-        "on_32": "0x2001",
-        "on_56": "0x3800"
+        "off": CSN_OFF,
+        "on": CSN_NO_OVERRIDE,
+        "on_32": CSN_32_MSB,
+        "on_56": CSN_56_MSB,
+        "on_56_lsb": CSN_56_LSB,
     }
 
     csn_header_added = False
-    for k, ini_k in csn_keys.items():
+    for k, ini_keys in csn_keys.items():
         v = form_data.get(k)
         if v and v in csn_val_map:
             if not csn_header_added:
                 ini_lines.append("\n[rfid/hf/app/csn]")
                 csn_header_added = True
-            ini_lines.append(f"{ini_k} = {csn_val_map[v]}")
+            ini_lines.extend(f"{ini_k} = {csn_val_map[v]}" for ini_k in ini_keys)
 
     return "\n".join(ini_lines).strip()
 
@@ -152,10 +185,9 @@ def compile_partial_bin_via_forge(partial_name, fw_version, user_email, output_d
     1. Triggers Forge compilation job for a partial configuration profile.
     2. Polls GCS (forge/{user_email}/v{version}/partials/) until the compiled binary arrives.
     3. Downloads it into output_dir and returns the local path, or None on failure.
+    Raises ForgeAuthError when the IAP cookie is missing or rejected.
     """
-    if not ACTIVE_IAP_COOKIE:
-        log.warning("ACTIVE_IAP_COOKIE missing. Skipping Forge trigger.")
-        return None
+    _require_iap_cookie()
 
     url = f"{FORGE_BASE_URL.rstrip('/')}/configs/build"
     headers = _get_auth_headers()
@@ -187,6 +219,7 @@ def compile_partial_bin_via_forge(partial_name, fw_version, user_email, output_d
     try:
         log.info("Submitting partial build for %s (%s) to Forge...", stem, version_str)
         response = requests.post(url, data=payload, headers=headers, timeout=30, allow_redirects=False)
+        _check_iap_auth(response)
 
         if response.status_code not in [200, 201, 302, 303]:
             log.error("Forge returned status %s: %s", response.status_code, response.text[:300])
@@ -225,6 +258,8 @@ def compile_partial_bin_via_forge(partial_name, fw_version, user_email, output_d
         log.error("No compiled partial binary found after %ss.", timeout_s)
         return None
 
+    except ForgeAuthError:
+        raise
     except Exception as e:
         log.exception("Exception building partial: %s", e)
         return None

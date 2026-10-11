@@ -1,3 +1,4 @@
+import re
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
@@ -16,8 +17,12 @@ EDITABLE_FIELDS = [
     'fsk_prox', 'ask_prox', 'prox_filter', 'prox_filter_description',
     'ble_advertising_config', 'ble_functionality', 'nfc_functionality',
     'mobile_keyset', 'legacy_credentials', 'transport_mode',
-    'mfc_csn', 'ev1_ev2_csn', 'iclass_csn', 'iso_15693_csn', 'iso_14443a_csn'
+    'mfc_csn', 'ev1_ev2_csn', 'iclass_csn', 'iso_15693_csn', 'iso_14443a_csn',
+    'leaf_si', 'leaf_cc', 'keyset_id', 'custom_keyset',
+    'ecp_desfire', 'mifare_2go', 'ecp_tci', 'meridian_bit_count', 'ble_advertising_name'
 ]
+
+MERIDIAN_BIT_COUNTS = (32, 40, 57, 128)
 
 
 def _normalize(val):
@@ -33,6 +38,20 @@ def _normalize(val):
 def _parse_field(field, raw):
     """Returns (value, error) for one submitted form field."""
     raw = (raw or "").strip()
+    if field == 'meridian_bit_count':
+        if raw == "":
+            return None, None
+        if not raw.isdigit() or int(raw) not in MERIDIAN_BIT_COUNTS:
+            return None, f"Apple Meridian Bit Count must be one of {', '.join(map(str, MERIDIAN_BIT_COUNTS))} (got '{raw}')."
+        return int(raw), None
+    if field == 'ecp_tci' and raw:
+        if not re.fullmatch(r'[0-9A-Fa-f]{6}', raw):
+            return None, f"ECP TCI must be 6 hex characters, e.g. 0209FE (got '{raw}')."
+        return raw.upper(), None
+    if field == 'ble_advertising_name' and raw:
+        if len(raw) > 5:
+            return None, f"BLE Advertising Name can be at most 5 characters (got '{raw}')."
+        return raw.upper(), None
     if field == 'facility_code':
         if raw == "":
             return None, None

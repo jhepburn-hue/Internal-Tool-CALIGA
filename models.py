@@ -85,6 +85,15 @@ class Configuration(db.Model):
     transport_mode = db.Column(db.Text, nullable=True)
     mobile_notes = db.Column(db.Text, nullable=True)
 
+    # Fields INI-Generator reads that the original configuration form import didn't have.
+    keyset_id = db.Column(db.Text, nullable=True) # e.g. "Lk50003"
+    custom_keyset = db.Column(db.Text, nullable=True) # 'On' / 'Off': custom LEAF Cc keyset
+    ecp_desfire = db.Column(db.Text, nullable=True) # 'On' / 'Off': Apple Wallet
+    mifare_2go = db.Column(db.Text, nullable=True) # 'On' / 'Off': Android Wallet
+    ecp_tci = db.Column(db.Text, nullable=True) # 6 hex characters
+    meridian_bit_count = db.Column(db.Integer, nullable=True) # 32, 40, 57 or 128
+    ble_advertising_name = db.Column(db.String(20), nullable=True) # Up to 5 characters
+
     assigned_part_numbers = db.Column(db.Text, nullable=True)
     card_type = db.Column(db.Text, nullable=True)
     bitstream = db.Column(db.Text, nullable=True)
@@ -98,6 +107,20 @@ class Configuration(db.Model):
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
     revisions = db.relationship('RevisionHistory', backref='configuration', lazy=True, cascade="all, delete-orphan")
+
+    # leaf_si / leaf_cc hold 'On' / 'Off'. Card Type ("Leaf Si", "Leaf Cc", "Dual") is the fallback.
+    def _leaf_enabled(self, column_value, card_types):
+        if column_value:
+            return column_value.strip().lower() in ('on', 'yes', 'enabled')
+        return (self.card_type or '').strip().lower() in card_types
+
+    @property
+    def leaf_si_enabled(self):
+        return self._leaf_enabled(self.leaf_si, ('leaf si', 'dual'))
+
+    @property
+    def leaf_cc_enabled(self):
+        return self._leaf_enabled(self.leaf_cc, ('leaf cc', 'dual'))
 
 
 class RevisionHistory(db.Model):

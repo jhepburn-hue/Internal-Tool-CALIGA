@@ -1,219 +1,182 @@
+"""
+Builds a configuration's INI with the INI-Generator package (github.com/jhepburn-hue/INI-Generator).
+
+CALIGA passes the configuration's database fields as form rows (a label, then its value), the
+same layout as the CSV configuration form. INI-Generator applies settings_default.ini, the
+customer profiles, and its validation checks, and returns the INI plus anything that needs a
+manual review.
+
+INI-Generator needs two private files, settings_default.ini and customer_profiles.json:
+- INI_GENERATOR_PRIVATE_DIR in .env points at a local folder with them, or
+- they're downloaded once per run from gs://<GCS_BUCKET_NAME>/<INI_GENERATOR_GCS_PREFIX>.
+"""
 import os
-import re
 import logging
-import configparser
-from pathlib import Path
-from models import Configuration
-from utils.prox_math import generate_hex_codes
-from utils.prox_parser import parse_prox_description
+import tempfile
+import threading
+from google.api_core.exceptions import NotFound
+from services.gcs_client import get_gcs_client, GCS_BUCKET_NAME
+from utils.errors import UserFacingError
 
 log = logging.getLogger(__name__)
 
-DEFAULT_INI_TEMPLATE = "default.ini"
+GCS_PREFIX = os.getenv('INI_GENERATOR_GCS_PREFIX', 'private/ini-generator/')
+CACHE_DIR = os.path.join(tempfile.gettempdir(), 'caliga_ini_generator')
+DEFAULTS_FILE = 'settings_default.ini'
+PROFILES_FILE = 'customer_profiles.json'
 
-def set_kv(cfg: configparser.ConfigParser, section: str, key: str, value: str):
-    if not cfg.has_section(section):
-        cfg.add_section(section)
-    cfg.set(section, key, value)
+# CALIGA CSN dropdown value -> INI-Generator CSN format name. Unknown values pass through
+# unchanged, and INI-Generator flags them for manual review.
+CSN_FORMAT_NAMES = {
+    'on': '',                           # CSN On with no format: 32-bit MSB (0x2001)
+    'standard': 'standard ethos',       # CALIGA's "Standard" is 0x2001
+    '32 bit msb': '32-bit msb',
+    '32-bit msb': '32-bit msb',
+    '32-bit lsb': '32-bit lsb',
+    '40-bit msb': 'csn_40_bit_msb_lrc',
+    '56-bit msb': 'csn_56_bit_msb',
+    '56-bit lsb': 'csn_56_bit',
+}
+CSN_OFF_VALUES = ('off', 'disabled', 'none', '-', '0', 'false')
 
-def _emit_ini_sorted(cfg: configparser.ConfigParser, out_ini_path: str, keys_entries: dict, prox_filter_block: str = None, notes_block: str = None):
-    """
-    Emits INI with sections sorted alphabetically, keeping wallet/meridian/mifare_2go grouped together.
-    [keys] placed at bottom sorted by slot number, followed by notes.
-    """
-    KEYS_SEC = "keys"
-    GROUP = [
-        "rfid/hf/app/wallet",
-        "rfid/hf/app/meridian",
-        "rfid/hf/app/mifare_2go/generic",
+_lock = threading.Lock()
+_csv_parser = None
+
+
+class IniGenerationError(UserFacingError):
+    pass
+
+
+def _download_private_files():
+    client = get_gcs_client()
+    if client is None:
+        raise IniGenerationError(
+            "Can't generate INIs: Google Cloud Storage is unavailable and INI_GENERATOR_PRIVATE_DIR isn't set."
+        )
+
+    os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
+    bucket = client.bucket(GCS_BUCKET_NAME)
+
+    for name in (DEFAULTS_FILE, PROFILES_FILE):
+        path = os.path.join(CACHE_DIR, name)
+        try:
+            bucket.blob(GCS_PREFIX + name).download_to_filename(path)
+            log.info("Downloaded gs://%s/%s%s", GCS_BUCKET_NAME, GCS_PREFIX, name)
+        except NotFound:
+            # Don't let a stale copy from an earlier run stand in for a missing file.
+            if os.path.exists(path):
+                os.remove(path)
+            if name == DEFAULTS_FILE:
+                raise IniGenerationError(
+                    f"Can't generate INIs: gs://{GCS_BUCKET_NAME}/{GCS_PREFIX}{DEFAULTS_FILE} doesn't exist. "
+                    "Upload it, or set INI_GENERATOR_PRIVATE_DIR in .env."
+                )
+            log.warning("%s not found in GCS. Customer and partner apps won't be generated.", name)
+    return CACHE_DIR
+
+
+def _private_dir():
+    local_dir = os.getenv('INI_GENERATOR_PRIVATE_DIR')
+    if not local_dir:
+        return _download_private_files()
+    if not os.path.exists(os.path.join(local_dir, DEFAULTS_FILE)):
+        raise IniGenerationError(f"Can't generate INIs: {DEFAULTS_FILE} isn't in INI_GENERATOR_PRIVATE_DIR ({local_dir}).")
+    return local_dir
+
+
+def _generator():
+    """Imports INI-Generator once, after pointing it at the private files. It reads them at import time."""
+    global _csv_parser
+    with _lock:
+        if _csv_parser is None:
+            os.environ['INI_GENERATOR_PRIVATE_DIR'] = _private_dir()
+            from ini_generator import csv_parser
+            _csv_parser = csv_parser
+    return _csv_parser
+
+
+def _row(label, value):
+    return [label, "", "" if value is None else str(value).strip()]
+
+
+def _csn_row(label, value):
+    value = (value or "").strip()
+    if not value:
+        return [label, ""]
+    if value.lower() in CSN_OFF_VALUES:
+        return [label, "", "Off"]
+    format_name = CSN_FORMAT_NAMES.get(value.lower(), value)
+    return [label, "", "On", format_name] if format_name else [label, "", "On"]
+
+
+def config_to_rows(config):
+    """Returns the configuration as INI-Generator form rows."""
+    return [
+        _row("Config Name", config.config_name),
+        _row("Config ID", config.config_id_dec),
+
+        _row("Idle LED", config.idle_led),
+        _row("Credential Report LED", config.credential_report_led),
+        _row("Beeper", config.beeper),
+        _row("Keypad Format", config.keypad_format),
+        _row("Tamper Monitoring", config.tamper_monitoring),
+        _row("Casi Output Format", config.casi_output_format),
+
+        _row("Leaf Si Application (Kv1)", "Leaf Si" if config.leaf_si_enabled else "None"),
+        _row("Leaf Cc Application (Kc1)", "Leaf Cc" if config.leaf_cc_enabled else "None"),
+        _row("Keyset ID (LkXXXXX)", config.keyset_id),
+        _row("Custom Keyset (LEAF Cc)", config.custom_keyset),
+        _row("Other Custom HF Application", config.other_custom_hf_application),
+        _row("Custom / Application / Notes", config.custom_application_notes),
+        _row("Card Notes", config.card_notes),
+
+        _csn_row("MFC CSN", config.mfc_csn),
+        _csn_row("EV1/EV2 CSN", config.ev1_ev2_csn),
+        _csn_row("iClass CSN", config.iclass_csn),
+        _csn_row("ISO15693 CSN", config.iso_15693_csn),
+        _csn_row("ISO14443A CSN", config.iso_14443a_csn),
+
+        _row("FSK Prox", config.fsk_prox),
+        _row("ASK Prox", config.ask_prox),
+        _row("Prox Filter", config.prox_filter),
+        _row("Prox Filter Description", config.prox_filter_description),
+
+        _row("BLE Functionality", config.ble_functionality),
+        _row("BLE Advertising Config", config.ble_advertising_config),
+        _row("BLE Advertising Name", config.ble_advertising_name),
+        _row("Mobile Keyset", config.mobile_keyset),
+        _row("Mobile Notes", config.mobile_notes),
+        _row("Legacy Credentials", config.legacy_credentials),
+        _row("NFC Functionality", config.nfc_functionality),
+
+        _row("ECP DESFire", config.ecp_desfire),
+        _row("MiFare2Go", config.mifare_2go),
+        _row("ECP TCI", config.ecp_tci),
+        _row("Apple Meridian Bit Count", config.meridian_bit_count),
     ]
 
-    all_secs = cfg.sections()
-    normal_secs = [s for s in all_secs if s.lower() != KEYS_SEC]
-    normal_secs.sort(key=str.lower)
 
-    lower_to_orig = {s.lower(): s for s in normal_secs}
-    present_group = [lower_to_orig[g] for g in (g.lower() for g in GROUP) if g in lower_to_orig]
-    if present_group:
-        anchor_idx = min(normal_secs.index(s) for s in present_group)
-        for s in present_group:
-            normal_secs.remove(s)
-        ordered_present = [lower_to_orig[g] for g in (g.lower() for g in GROUP) if g in lower_to_orig]
-        normal_secs[anchor_idx:anchor_idx] = ordered_present
-
-    out_lines = []
-    for sec in normal_secs:
-        out_lines.append(f"[{sec}]\n")
-        items = list(cfg.items(sec))
-        enabled_items = [(k, v) for (k, v) in items if k.lower() == "enabled"]
-        other_items = [(k, v) for (k, v) in items if k.lower() != "enabled"]
-        other_items.sort(key=lambda kv: kv[0].lower())
-        for k, v in (enabled_items + other_items):
-            out_lines.append(f"{k} = {v}\n")
-        out_lines.append("\n")
-
-    if prox_filter_block:
-        if not out_lines or not out_lines[-1].endswith("\n"):
-            out_lines.append("\n")
-        out_lines.append(prox_filter_block if prox_filter_block.endswith("\n") else prox_filter_block + "\n")
-
-    if keys_entries:
-        ordered_slots = sorted(keys_entries.keys(), key=lambda x: int(re.sub(r"\D", "", x) or 0))
-        out_lines.append("\n[keys]\n")
-        for slot in ordered_slots:
-            out_lines.append(f"{slot} = {keys_entries[slot]}\n")
-
-    if notes_block:
-        if not out_lines or not out_lines[-1].endswith("\n"):
-            out_lines.append("\n")
-        out_lines.append(notes_block if notes_block.endswith("\n") else notes_block + "\n")
-
-    os.makedirs(os.path.dirname(out_ini_path), exist_ok=True)
-    with open(out_ini_path, "w") as f:
-        f.write("".join(out_lines).rstrip() + "\n")
-
-def map_csn_to_hex_flag(csn_value):
-    if not csn_value or str(csn_value).strip().lower() in ['off', 'disabled', '0', 'false', 'none', '-']:
-        return "0xFFFF"
-    val_upper = str(csn_value).upper()
-    if '56' in val_upper:
-        return "0x3701"
-    elif '32' in val_upper:
-        return "0x2001"
-    elif 'STANDARD' in val_upper or 'ON' in val_upper:
-        return "0x2001"
-    return "0xFFFF"
-
-def generate_ini_from_config(config: Configuration, output_path: str) -> bool:
+def generate_ini_from_config(config, output_path):
     """
-    Converts a Configuration database model instance into a spec-compliant .ini file.
+    Writes the configuration's INI to output_path and returns INI-Generator's review warnings.
+    The warnings are also written at the top of the file as comments.
+    Raises IniGenerationError when the INI can't be generated.
     """
-    cfg = configparser.ConfigParser(interpolation=None)
-    cfg.optionxform = str
+    csv_parser = _generator()
 
-    template_file = DEFAULT_INI_TEMPLATE if os.path.exists(DEFAULT_INI_TEMPLATE) else "settings_default.ini"
-    if os.path.exists(template_file):
-        cfg.read(template_file)
+    try:
+        ini_text, warnings = csv_parser.generate_ini(config_to_rows(config))
+    except ValueError as e:
+        raise IniGenerationError(f"Couldn't generate the INI for {config.config_name}: {e}")
 
-    keys_entries = {}
+    header = [f"; Generated by CALIGA from the {config.config_name} database record with INI-Generator."]
+    if warnings:
+        header.append("; Needs manual review:")
+        header.extend(f";   - {w}" for w in warnings)
 
-    cfg_id_dec = str(config.config_id_dec or "").strip()
-    if cfg_id_dec.isdigit():
-        set_kv(cfg, "mfg_data", "cfg_id", f"0x{int(cfg_id_dec):04X}")
-    elif config.config_id_hex:
-        set_kv(cfg, "mfg_data", "cfg_id", str(config.config_id_hex))
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    with open(output_path, "w") as f:
+        f.write("\n".join(header) + "\n\n" + ini_text)
 
-    idle_color = (config.idle_led or "Red").strip().lower()
-    cred_color = (config.credential_report_led or "Green").strip().lower()
-    if idle_color != "undefined":
-        set_kv(cfg, "av", "idle_color", f'"{idle_color}"')
-    if cred_color != "undefined":
-        set_kv(cfg, "av", "credential_report_color", f'"{cred_color}"')
-
-    beeper_on = "true" if config.beeper and config.beeper.lower() in ['on', 'enabled', 'yes', 'true'] else "false"
-    set_kv(cfg, "rfid/av", "beep_enabled", beeper_on)
-
-    leaf_si_active = config.leaf_si and "si" in config.leaf_si.lower() or config.leaf_si == "Yes"
-    if leaf_si_active:
-        set_kv(cfg, "rfid/hf/app/leaf/desfire", "enabled", "true")
-        set_kv(cfg, "rfid/hf/app/leaf/desfire", "check_legacy_signature", "true")
-        set_kv(cfg, "rfid/hf/app/leaf/desfire/1", "enabled", "true")
-        set_kv(cfg, "rfid/hf/app/leaf/desfire/1", "app_id", '"F51CD8"')
-        set_kv(cfg, "rfid/hf/app/leaf/desfire/1", "card_key_nb", "2")
-        set_kv(cfg, "rfid/hf/app/leaf/desfire/1", "se_key_nb", "2")
-        set_kv(cfg, "rfid/hf/app/leaf/duox/openid", "enabled", "true")
-
-    lk_number = ""
-    notes_combined = f"{config.custom_application_notes or ''} {config.card_notes or ''}"
-    lk_match = re.search(r'[Ll][Kk]\d{5}', notes_combined)
-    if lk_match:
-        lk_number = f"Lk{lk_match.group(0)[2:]}"
-
-    if lk_number:
-        set_kv(cfg, "rfid/hf/app/leaf/desfire/2", "enabled", "true")
-        set_kv(cfg, "rfid/hf/app/leaf/desfire/2", "app_id", '"F51CDB"')
-        set_kv(cfg, "rfid/hf/app/leaf/desfire/2", "card_key_nb", "8")
-        set_kv(cfg, "rfid/hf/app/leaf/desfire/2", "se_key_nb", "11")
-        keys_entries["slot11"] = f"{lk_number}:Kc8"
-
-    ble_val = (config.ble_functionality or "").lower()
-    if "mypass" in ble_val or "admin + credentials" in ble_val or "custom" in ble_val:
-        set_kv(cfg, "mypass", "allow_credentials", "true")
-        set_kv(cfg, "mypass", "bcd_credentials", "false")
-        set_kv(cfg, "mypass", "km1_se_slot_nb", "03")
-        set_kv(cfg, "mypass", "km2_se_slot_nb", "13")
-        set_kv(cfg, "mypass", "kc1_se_slot_nb", "04")
-        set_kv(cfg, "mypass", "kc2_se_slot_nb", "14")
-        set_kv(cfg, "mypass", "all_keys", "true")
-        set_kv(cfg, "mypass", "metadata", '"00000000"')
-        set_kv(cfg, "mypass", "allow_key_rolling", "true")
-        set_kv(cfg, "rfid/hf/app/mypass", "enabled", "true")
-
-        if "mypass" in ble_val:
-            keys_entries["slot13"] = "Ck00001:KM2"
-            keys_entries["slot14"] = "Ck00001:KC2"
-        elif lk_number:
-            keys_entries["slot13"] = f"{lk_number}:Km2"
-            keys_entries["slot14"] = f"{lk_number}:Kc2"
-
-    csn_sec = "rfid/hf/app/csn"
-    mfc_flag = map_csn_to_hex_flag(config.mfc_csn)
-    ev_flag = map_csn_to_hex_flag(config.ev1_ev2_csn)
-    iclass_flag = map_csn_to_hex_flag(config.iclass_csn)
-    iso15_flag = map_csn_to_hex_flag(config.iso_15693_csn)
-    iso14_flag = map_csn_to_hex_flag(config.iso_14443a_csn)
-
-    any_csn = any(f != "0xFFFF" for f in [mfc_flag, ev_flag, iclass_flag, iso15_flag, iso14_flag])
-    set_kv(cfg, csn_sec, "enabled", "true" if any_csn else "false")
-
-    if mfc_flag != "0xFFFF": set_kv(cfg, csn_sec, "mifare_classic_format", mfc_flag)
-    if ev_flag != "0xFFFF": set_kv(cfg, csn_sec, "mifare_desfire_format", ev_flag)
-    if iso14_flag != "0xFFFF":
-        set_kv(cfg, csn_sec, "iso14443a_cl1_format", iso14_flag)
-        set_kv(cfg, csn_sec, "iso14443a_cl2_format", iso14_flag)
-    if iso15_flag != "0xFFFF": set_kv(cfg, csn_sec, "iso15693_format", iso15_flag)
-    if iclass_flag != "0xFFFF": set_kv(cfg, csn_sec, "pico15693_format", iclass_flag)
-
-    prox_on = config.fsk_prox and config.fsk_prox.lower() in ['on', 'enabled', 'yes']
-    prox_filter_enabled = config.prox_filter and config.prox_filter.lower() in ['on', 'enabled', 'yes']
-    prox_filter_block = None
-
-    if prox_on or prox_filter_enabled:
-        set_kv(cfg, "rfid/lf", "enabled", "true")
-
-        if prox_filter_enabled:
-            prox_notes = (config.prox_filter_description or "").strip()
-            if prox_notes:
-                lines = prox_notes.splitlines()
-                prox_filter_block = "\n; Prox Filter\n" + ("\n".join(f"; {ln}" if ln.strip() else ";" for ln in lines) + "\n")
-
-            details = parse_prox_description(prox_notes)
-            if details and "rules" in details and details["rules"]:
-                m_hex, v_hex = generate_hex_codes(details)
-                rule = details["rules"][0]
-                is_rule_disabled = rule.get("disabled", False)
-                bit_count = 40 if is_rule_disabled else details.get("bit_count", 40)
-
-                set_kv(cfg, "rfid/lf", "filter_mask", f'"{m_hex}"')
-                set_kv(cfg, "rfid/lf", "filter_value", f'"{v_hex}"')
-                set_kv(cfg, "rfid/lf", "filter_bit_len", str(bit_count))
-                set_kv(cfg, "rfid/lf", "filter_enabled", "false" if is_rule_disabled else "true")
-
-                logic_map = {"GREATER_OR_EQUAL": '"greater_or_equal"', "LESS_OR_EQUAL": '"less_or_equal"', "EQUAL": '"equal"'}
-                set_kv(cfg, "rfid/lf", "filter_function", logic_map.get(rule["logic"], '"equal"'))
-            else:
-                set_kv(cfg, "rfid/lf", "filter_bit_len", "40")
-                set_kv(cfg, "rfid/lf", "filter_enabled", "false")
-                set_kv(cfg, "rfid/lf", "filter_function", '"equal"')
-                set_kv(cfg, "rfid/lf", "filter_mask", '"0000000000"')
-                set_kv(cfg, "rfid/lf", "filter_value", '"0000000000"')
-
-    notes_txt = (config.card_notes or "").strip()
-    notes_block = None
-    if notes_txt:
-        lines = notes_txt.splitlines()
-        notes_block = "\n; Notes\n" + "\n".join(f"; {ln}" if ln.strip() else ";" for ln in lines) + "\n"
-
-    _emit_ini_sorted(cfg, output_path, keys_entries, prox_filter_block, notes_block)
-    log.info("Generated INI for %s -> %s", config.config_name, output_path)
-    return True
+    log.info("Generated INI for %s -> %s (%d review warnings)", config.config_name, output_path, len(warnings))
+    return warnings

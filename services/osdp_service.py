@@ -5,6 +5,7 @@ import threading
 import serial
 import serial.tools.list_ports
 from services.gcs_service import get_or_build_firmware_bin
+from utils.errors import UserFacingError
 from osdp_library.osdp.data_trafficking.osdp_traffic_conductor import OsdpTrafficConductor
 
 log = logging.getLogger(__name__)
@@ -126,6 +127,8 @@ def flash_firmware_osdp(config, fw_version, user_email, output_dir, progress_cal
         log.info(msg)
         return True, msg
 
+    except UserFacingError as e:
+        return False, str(e)
     except Exception as e:
         log.exception("Exception during OSDP flash: %s", e)
         return False, f"Communication error: {str(e)}"

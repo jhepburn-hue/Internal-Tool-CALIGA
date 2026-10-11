@@ -1,0 +1,53 @@
+{# Form rows for the fields INI-Generator reads. Used by the create and details pages. #}
+
+{% macro select_row(label, name, options, value, editable) %}
+<tr>
+    <td class="text-secondary w-50">{{ label }}:</td>
+    <td>
+        {% if editable %}
+            <select name="{{ name }}" class="form-select form-select-sm bg-dark text-light border-secondary">
+                <option value="" {% if value in (None, '') %}selected{% endif %}>Not set</option>
+                {% for opt in options %}
+                    <option value="{{ opt }}" {% if value is not none and value|string == opt|string %}selected{% endif %}>{{ opt }}</option>
+                {% endfor %}
+            </select>
+        {% else %}{{ value if value not in (None, '') else '-' }}{% endif %}
+    </td>
+</tr>
+{% endmacro %}
+
+{% macro text_row(label, name, value, editable, placeholder='') %}
+<tr>
+    <td class="text-secondary w-50">{{ label }}:</td>
+    <td>
+        {% if editable %}
+            <input type="text" name="{{ name }}" value="{{ value if value not in (None, '') else '' }}" placeholder="{{ placeholder }}"
+                   class="form-control form-control-sm bg-dark text-light border-secondary">
+        {% else %}{{ value if value not in (None, '') else '-' }}{% endif %}
+    </td>
+</tr>
+{% endmacro %}
+
+{% macro ble_name_row(config, editable) %}
+{{ text_row('BLE Advertising Name', 'ble_advertising_name', config.ble_advertising_name, editable, 'Up to 5 characters') }}
+{% endmacro %}
+
+{% macro leaf_wallet_card(config, editable) %}
+<div class="col-md-6">
+    <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
+        <h6 class="fw-bold role-header-navy mb-3">LEAF & Wallet</h6>
+        <table class="table table-dark table-sm align-middle mb-0">
+            <tbody>
+                {{ select_row('Leaf Si Application', 'leaf_si', ['On', 'Off'], config.leaf_si, editable) }}
+                {{ select_row('Leaf Cc Application', 'leaf_cc', ['On', 'Off'], config.leaf_cc, editable) }}
+                {{ text_row('Keyset ID', 'keyset_id', config.keyset_id, editable, 'e.g. Lk50003') }}
+                {{ select_row('Custom Keyset (LEAF Cc)', 'custom_keyset', ['On', 'Off'], config.custom_keyset, editable) }}
+                {{ select_row('ECP DESFire (Apple Wallet)', 'ecp_desfire', ['On', 'Off'], config.ecp_desfire, editable) }}
+                {{ select_row('MiFare2Go (Android Wallet)', 'mifare_2go', ['On', 'Off'], config.mifare_2go, editable) }}
+                {{ text_row('ECP TCI', 'ecp_tci', config.ecp_tci, editable, '6 hex characters, e.g. 0209FE') }}
+                {{ select_row('Apple Meridian Bit Count', 'meridian_bit_count', [32, 40, 57, 128], config.meridian_bit_count, editable) }}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endmacro %}

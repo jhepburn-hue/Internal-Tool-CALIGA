@@ -12,6 +12,12 @@ bp = Blueprint('testing', __name__)
 TESTABLE_STATUSES = ('Active', 'Production')
 
 
+def _wallet_summary(config_obj):
+    enabled = [name for name, value in (("Apple", config_obj.ecp_desfire), ("Android", config_obj.mifare_2go))
+               if (value or "").lower() in ("on", "yes", "enabled")]
+    return " + ".join(enabled) if enabled else "Off"
+
+
 def build_test_criteria(config_obj):
     """Returns (category, label, expected_value) tuples for a configuration's test suite."""
     action_categories = [
@@ -29,8 +35,8 @@ def build_test_criteria(config_obj):
         {
             "category": "ACTION: Present the HF credential.",
             "items": [
-                ("Leaf Si Application (Kv1)", "Leaf Si" if config_obj.card_type in ["Leaf Si", "Dual"] else "None"),
-                ("Leaf Cc Application (Kc1)", "Leaf Cc" if config_obj.card_type in ["Leaf Cc", "Dual"] else "None"),
+                ("Leaf Si Application (Kv1)", "Leaf Si" if config_obj.leaf_si_enabled else "None"),
+                ("Leaf Cc Application (Kc1)", "Leaf Cc" if config_obj.leaf_cc_enabled else "None"),
                 ("Other Custom HF Application", "None")
             ]
         },
@@ -61,7 +67,7 @@ def build_test_criteria(config_obj):
                 ("NFC Functionality", config_obj.nfc_functionality or "Enabled"),
                 ("MyPass Keyset", config_obj.mobile_keyset or "Standard"),
                 ("Legacy Credentials", config_obj.legacy_credentials or "Off"),
-                ("Wallet", "Off")
+                ("Wallet", _wallet_summary(config_obj))
             ]
         }
     ]

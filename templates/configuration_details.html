@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_ini_fields.html' import ble_name_row, leaf_wallet_card %}
 
 {% block content %}
 {% set is_sales = current_user.role == 'Sales' %}
@@ -302,6 +303,7 @@
                                 {% else %}{{ config.ble_advertising_config or '-' }}{% endif %}
                             </td>
                         </tr>
+                        {{ ble_name_row(config, is_editable) }}
                         <tr>
                             <td class="text-secondary">BLE Functionality:</td>
                             <td>
@@ -436,6 +438,8 @@
                 </table>
             </div>
         </div>
+
+        {{ leaf_wallet_card(config, is_editable) }}
     </div>
 
     {% if current_user.role in ['Sales', 'SET'] %}

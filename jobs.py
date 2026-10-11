@@ -15,6 +15,7 @@ import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from flask import current_app
+from utils.errors import UserFacingError
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ _jobs = {}
 _jobs_lock = threading.Lock()
 
 
-class JobError(Exception):
+class JobError(UserFacingError):
     """Raise inside a job function to fail the job with a user-facing message."""
 
 
@@ -85,7 +86,7 @@ def start_job(kind, owner_id, fn, *args, **kwargs):
             try:
                 fn(job, *args, **kwargs)
                 job.status = 'done'
-            except JobError as e:
+            except UserFacingError as e:
                 job.status = 'failed'
                 job.error = str(e)
             except Exception as e:
