@@ -115,6 +115,8 @@ INI-Generator needs `settings_default.ini` and `customer_profiles.json`. CALIGA 
 
 The LEAF & Wallet fields (Leaf Si/Cc, Keyset ID, Custom Keyset, ECP DESFire, MiFare2Go, ECP TCI, Meridian bit count) and BLE Advertising Name feed INI-Generator directly. Blank fields leave those settings at defaults.
 
+`tools/backfill_ini_fields.py` fills those fields from each configuration's master INI in `input/<version>/`. It only fills blank fields and adds a revision history entry for each configuration it changes. Run it without arguments for a dry run, and with `--apply` to save.
+
 ## Flashing
 
 Flashing uses the serial port of the machine running CALIGA, so the reader must be connected to that machine. If the adapter isn't detected automatically, set `OSDP_SERIAL_PORT` in `.env`.
