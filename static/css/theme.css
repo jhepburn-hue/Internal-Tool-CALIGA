@@ -1,0 +1,473 @@
+/*
+ * CALIGA theme: plain dark terminal look. Loaded after Bootstrap and overrides its color variables,
+ * so every Bootstrap class used in the templates (bg-dark, text-secondary, btn-success...) follows it.
+ * Change the palette here, in one place.
+ */
+
+:root,
+[data-bs-theme=dark] {
+    --cg-bg: #0a0a0a;
+    --cg-surface: #101010;
+    --cg-surface-2: #161616;
+    --cg-border: #2a2a2a;
+    --cg-border-strong: #3a3a3a;
+    --cg-text: #c9d1c9;
+    --cg-muted: #7d877d;
+    --cg-green: #39ff7a;
+    --cg-green-dim: #1f8a45;
+    --cg-cyan: #4fd6e0;
+    --cg-amber: #ffb000;
+    --cg-red: #ff5f56;
+    --cg-font: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+    --bs-body-bg: var(--cg-bg);
+    --bs-body-bg-rgb: 10, 10, 10;
+    --bs-body-color: var(--cg-text);
+    --bs-body-color-rgb: 201, 209, 201;
+    --bs-body-font-family: var(--cg-font);
+    --bs-font-monospace: var(--cg-font);
+    --bs-body-font-size: 0.9rem;
+    --bs-emphasis-color: #e8f0e8;
+    --bs-emphasis-color-rgb: 232, 240, 232;
+    --bs-secondary-color: var(--cg-muted);
+    --bs-tertiary-color: #5c655c;
+    --bs-secondary-bg: var(--cg-surface-2);
+    --bs-tertiary-bg: var(--cg-surface);
+    --bs-border-color: var(--cg-border);
+    --bs-border-color-translucent: var(--cg-border);
+    --bs-heading-color: #e8f0e8;
+    --bs-link-color: var(--cg-green);
+    --bs-link-color-rgb: 57, 255, 122;
+    --bs-link-hover-color: #8dffb3;
+    --bs-link-hover-color-rgb: 141, 255, 179;
+    --bs-code-color: var(--cg-amber);
+    --bs-highlight-bg: #2b2400;
+    --bs-highlight-color: var(--cg-amber);
+
+    --bs-border-radius: 2px;
+    --bs-border-radius-sm: 2px;
+    --bs-border-radius-lg: 2px;
+    --bs-border-radius-xl: 2px;
+    --bs-border-radius-pill: 2px;
+    --bs-box-shadow: none;
+    --bs-box-shadow-sm: none;
+    --bs-box-shadow-lg: none;
+
+    /* Theme colors used by the utility classes (text-*, bg-*, border-*). */
+    --bs-primary: var(--cg-green);
+    --bs-primary-rgb: 57, 255, 122;
+    --bs-success: var(--cg-green);
+    --bs-success-rgb: 57, 255, 122;
+    --bs-info: var(--cg-cyan);
+    --bs-info-rgb: 79, 214, 224;
+    --bs-warning: var(--cg-amber);
+    --bs-warning-rgb: 255, 176, 0;
+    --bs-danger: var(--cg-red);
+    --bs-danger-rgb: 255, 95, 86;
+    --bs-secondary: var(--cg-muted);
+    --bs-secondary-rgb: 125, 135, 125;
+    --bs-light: var(--cg-text);
+    --bs-light-rgb: 201, 209, 201;
+    --bs-dark: var(--cg-surface);
+    --bs-dark-rgb: 16, 16, 16;
+    --bs-black-rgb: 0, 0, 0;
+    --bs-white-rgb: 232, 240, 232;
+
+    --bs-primary-text-emphasis: var(--cg-green);
+    --bs-success-text-emphasis: var(--cg-green);
+    --bs-info-text-emphasis: var(--cg-cyan);
+    --bs-warning-text-emphasis: var(--cg-amber);
+    --bs-danger-text-emphasis: var(--cg-red);
+    --bs-secondary-text-emphasis: var(--cg-text);
+    --bs-light-text-emphasis: var(--cg-text);
+    --bs-dark-text-emphasis: var(--cg-text);
+    --bs-primary-bg-subtle: #07200f;
+    --bs-success-bg-subtle: #07200f;
+    --bs-info-bg-subtle: #061c1e;
+    --bs-warning-bg-subtle: #221800;
+    --bs-danger-bg-subtle: #240b0a;
+    --bs-secondary-bg-subtle: var(--cg-surface-2);
+    --bs-light-bg-subtle: var(--cg-surface-2);
+    --bs-dark-bg-subtle: var(--cg-surface);
+    --bs-primary-border-subtle: var(--cg-green-dim);
+    --bs-success-border-subtle: var(--cg-green-dim);
+    --bs-info-border-subtle: #22636a;
+    --bs-warning-border-subtle: #7a5500;
+    --bs-danger-border-subtle: #7a2c28;
+    --bs-secondary-border-subtle: var(--cg-border-strong);
+    --bs-light-border-subtle: var(--cg-border-strong);
+    --bs-dark-border-subtle: var(--cg-border);
+
+    --bs-form-valid-color: var(--cg-green);
+    --bs-form-valid-border-color: var(--cg-green-dim);
+    --bs-form-invalid-color: var(--cg-red);
+    --bs-form-invalid-border-color: var(--cg-red);
+}
+
+body {
+    background-color: var(--cg-bg);
+    color: var(--cg-text);
+    font-family: var(--cg-font);
+}
+
+::selection {
+    background: var(--cg-green);
+    color: #000;
+}
+
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+code, kbd, pre {
+    font-family: var(--cg-font);
+}
+
+/* ---- Surfaces ---- */
+
+.card,
+.modal-content,
+.dropdown-menu,
+.list-group-item,
+.accordion-item {
+    background-color: var(--cg-surface) !important;
+    border: 1px solid var(--cg-border) !important;
+    box-shadow: none !important;
+}
+
+.card-header,
+.card-footer,
+.modal-header,
+.modal-footer {
+    background-color: var(--cg-surface-2);
+    border-color: var(--cg-border) !important;
+}
+
+.bg-dark-subtle-custom {
+    background-color: var(--cg-surface-2) !important;
+}
+
+.bg-black {
+    background-color: #000 !important;
+}
+
+.shadow, .shadow-sm, .shadow-lg {
+    box-shadow: none !important;
+}
+
+hr {
+    border-color: var(--cg-border-strong);
+    opacity: 1;
+}
+
+/* ---- Navbar ---- */
+
+.navbar {
+    background-color: #000 !important;
+    border-bottom: 1px solid var(--cg-border) !important;
+}
+
+.navbar-brand {
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--cg-green) !important;
+}
+
+.navbar-brand::before {
+    content: "> ";
+    color: var(--cg-muted);
+}
+
+.navbar .nav-link {
+    color: var(--cg-muted) !important;
+}
+
+.navbar .nav-link:hover {
+    color: var(--cg-text) !important;
+}
+
+.navbar .nav-link.active {
+    color: var(--cg-green) !important;
+}
+
+.navbar .nav-link.active::before {
+    content: "[";
+}
+
+.navbar .nav-link.active::after {
+    content: "]";
+}
+
+.dropdown-item {
+    color: var(--cg-text);
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+    background-color: var(--cg-surface-2);
+    color: var(--cg-green);
+}
+
+.dropdown-item.active,
+.dropdown-item:active {
+    background-color: var(--cg-green);
+    color: #000;
+}
+
+.dropdown-header {
+    color: var(--cg-muted);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+}
+
+/* ---- Buttons: outlined, fill on hover ---- */
+
+.btn {
+    font-family: var(--cg-font);
+    border-radius: 2px;
+    letter-spacing: 0.02em;
+}
+
+.btn-primary, .btn-success, .btn-outline-primary, .btn-outline-success {
+    --bs-btn-color: var(--cg-green);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--cg-green);
+    --bs-btn-hover-color: #000;
+    --bs-btn-hover-bg: var(--cg-green);
+    --bs-btn-hover-border-color: var(--cg-green);
+    --bs-btn-active-color: #000;
+    --bs-btn-active-bg: var(--cg-green);
+    --bs-btn-active-border-color: var(--cg-green);
+    --bs-btn-disabled-color: var(--cg-green-dim);
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: var(--cg-green-dim);
+    --bs-btn-focus-shadow-rgb: 57, 255, 122;
+}
+
+.btn-info, .btn-outline-info {
+    --bs-btn-color: var(--cg-cyan);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--cg-cyan);
+    --bs-btn-hover-color: #000;
+    --bs-btn-hover-bg: var(--cg-cyan);
+    --bs-btn-hover-border-color: var(--cg-cyan);
+    --bs-btn-active-color: #000;
+    --bs-btn-active-bg: var(--cg-cyan);
+    --bs-btn-active-border-color: var(--cg-cyan);
+    --bs-btn-disabled-color: #22636a;
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: #22636a;
+    --bs-btn-focus-shadow-rgb: 79, 214, 224;
+}
+
+.btn-warning, .btn-outline-warning {
+    --bs-btn-color: var(--cg-amber);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--cg-amber);
+    --bs-btn-hover-color: #000;
+    --bs-btn-hover-bg: var(--cg-amber);
+    --bs-btn-hover-border-color: var(--cg-amber);
+    --bs-btn-active-color: #000;
+    --bs-btn-active-bg: var(--cg-amber);
+    --bs-btn-active-border-color: var(--cg-amber);
+    --bs-btn-disabled-color: #7a5500;
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: #7a5500;
+    --bs-btn-focus-shadow-rgb: 255, 176, 0;
+}
+
+.btn-danger, .btn-outline-danger {
+    --bs-btn-color: var(--cg-red);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--cg-red);
+    --bs-btn-hover-color: #000;
+    --bs-btn-hover-bg: var(--cg-red);
+    --bs-btn-hover-border-color: var(--cg-red);
+    --bs-btn-active-color: #000;
+    --bs-btn-active-bg: var(--cg-red);
+    --bs-btn-active-border-color: var(--cg-red);
+    --bs-btn-disabled-color: #7a2c28;
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: #7a2c28;
+    --bs-btn-focus-shadow-rgb: 255, 95, 86;
+}
+
+.btn-secondary, .btn-outline-secondary, .btn-light, .btn-outline-light, .btn-dark, .btn-outline-dark {
+    --bs-btn-color: var(--cg-text);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--cg-border-strong);
+    --bs-btn-hover-color: var(--cg-green);
+    --bs-btn-hover-bg: var(--cg-surface-2);
+    --bs-btn-hover-border-color: var(--cg-green);
+    --bs-btn-active-color: var(--cg-green);
+    --bs-btn-active-bg: var(--cg-surface-2);
+    --bs-btn-active-border-color: var(--cg-green);
+    --bs-btn-disabled-color: #5c655c;
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: var(--cg-border);
+    --bs-btn-focus-shadow-rgb: 125, 135, 125;
+}
+
+.btn-check:checked + .btn {
+    color: #000 !important;
+    background-color: var(--bs-btn-active-border-color) !important;
+}
+
+.btn-close {
+    filter: invert(1) grayscale(1) brightness(0.8);
+}
+
+/* ---- Forms ---- */
+
+.form-control,
+.form-select,
+.input-group-text {
+    background-color: #000 !important;
+    color: var(--cg-text) !important;
+    border: 1px solid var(--cg-border-strong) !important;
+    font-family: var(--cg-font);
+}
+
+.form-control::placeholder {
+    color: #4f574f;
+}
+
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+    border-color: var(--cg-green) !important;
+    box-shadow: 0 0 0 1px var(--cg-green) !important;
+}
+
+.form-control:disabled,
+.form-control[readonly],
+.form-select:disabled {
+    background-color: var(--cg-surface-2) !important;
+    color: var(--cg-muted) !important;
+}
+
+.form-check-input {
+    background-color: #000;
+    border-color: var(--cg-border-strong);
+}
+
+.form-check-input:checked {
+    background-color: var(--cg-green);
+    border-color: var(--cg-green);
+}
+
+.form-switch .form-check-input:checked {
+    --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23000'/%3e%3c/svg%3e");
+}
+
+.form-label {
+    color: var(--cg-muted);
+}
+
+/* ---- Tables ---- */
+
+.table,
+.table-dark {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--cg-text);
+    --bs-table-border-color: var(--cg-border);
+    --bs-table-striped-bg: #0d0d0d;
+    --bs-table-striped-color: var(--cg-text);
+    --bs-table-hover-bg: var(--cg-surface-2);
+    --bs-table-hover-color: var(--cg-green);
+    --bs-table-active-bg: var(--cg-surface-2);
+}
+
+.table > thead th,
+.table-dark > thead th {
+    color: var(--cg-muted);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--cg-border-strong);
+}
+
+/* ---- Badges, alerts, progress ---- */
+
+.badge {
+    border-radius: 2px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+.badge.bg-success, .badge.bg-primary { background-color: transparent !important; color: var(--cg-green) !important; border: 1px solid var(--cg-green); }
+.badge.bg-info                       { background-color: transparent !important; color: var(--cg-cyan) !important; border: 1px solid var(--cg-cyan); }
+.badge.bg-warning                    { background-color: transparent !important; color: var(--cg-amber) !important; border: 1px solid var(--cg-amber); }
+.badge.bg-danger                     { background-color: transparent !important; color: var(--cg-red) !important; border: 1px solid var(--cg-red); }
+.badge.bg-secondary, .badge.bg-dark  { background-color: transparent !important; color: var(--cg-muted) !important; border: 1px solid var(--cg-border-strong); }
+
+.alert {
+    border-radius: 2px;
+    border-left-width: 3px;
+}
+
+.progress {
+    background-color: #000 !important;
+    border: 1px solid var(--cg-border-strong);
+    border-radius: 2px;
+}
+
+.progress-bar {
+    color: #000 !important;
+    font-weight: 700;
+}
+
+.spinner-border {
+    border-width: 2px;
+}
+
+/* ---- Configuration status colors ---- */
+
+.status-production { color: var(--cg-green) !important; }
+.status-active     { color: var(--cg-cyan) !important; }
+.status-poc        { color: var(--cg-amber) !important; }
+.status-archived   { color: var(--cg-red) !important; }
+
+/* Role labels and the role badge in the navbar. */
+.role-header-navy {
+    color: var(--cg-green) !important;
+}
+
+.badge-navy-green {
+    background-color: transparent !important;
+    color: var(--cg-green) !important;
+    border: 1px solid var(--cg-green-dim);
+}
+
+/* ---- Selectable tiles (testing runs, batch tokens) ---- */
+
+.select-tile, .run-config-tile, .config-tile {
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.1s, background-color 0.1s;
+    border: 1px solid var(--cg-border) !important;
+}
+
+.select-tile:hover, .run-config-tile:hover, .config-tile:hover {
+    border-color: var(--cg-green-dim) !important;
+    background-color: var(--cg-surface-2) !important;
+}
+
+.select-tile.selected, .run-config-tile.selected, .config-tile.selected {
+    border-color: var(--cg-green) !important;
+    background-color: #07200f !important;
+    color: var(--cg-green) !important;
+}
+
+/* ---- Scrollbars ---- */
+
+* {
+    scrollbar-color: var(--cg-border-strong) var(--cg-bg);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--cg-bg); }
+::-webkit-scrollbar-thumb { background: var(--cg-border-strong); }
+::-webkit-scrollbar-thumb:hover { background: var(--cg-green-dim); }
