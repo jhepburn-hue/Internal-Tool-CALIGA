@@ -1,4 +1,4 @@
-{# Form rows for the fields INI-Generator reads. Used by the create and details pages. #}
+{# Form rows for the fields the INI builder reads. Used by the create and details pages. #}
 
 {% macro select_row(label, name, options, value, editable) %}
 <tr>
@@ -26,6 +26,36 @@
         {% else %}{{ value if value not in (None, '') else '-' }}{% endif %}
     </td>
 </tr>
+{% endmacro %}
+
+{% macro textarea_row(label, name, value, editable, placeholder='') %}
+<tr>
+    <td class="text-secondary w-50">{{ label }}:</td>
+    <td>
+        {% if editable %}
+            <textarea name="{{ name }}" rows="3" placeholder="{{ placeholder }}"
+                      class="form-control form-control-sm bg-dark text-light border-secondary">{{ value if value not in (None, '') else '' }}</textarea>
+        {% else %}<span style="white-space: pre-wrap;">{{ value if value not in (None, '') else '-' }}</span>{% endif %}
+    </td>
+</tr>
+{% endmacro %}
+
+{# The INI builder reads these notes for customer apps, extra keysets, mobile keysets and INI lines. #}
+{% macro notes_card(config, editable) %}
+<div class="col-md-6">
+    <div class="card bg-dark-subtle-custom p-3 h-100 border-0">
+        <h6 class="fw-bold role-header-navy mb-3">Notes</h6>
+        <table class="table table-dark table-sm align-middle mb-0">
+            <tbody>
+                {{ textarea_row('Custom Application Notes', 'custom_application_notes', config.custom_application_notes, editable, 'Customer apps and keysets, e.g. MFC ACTPro, Lk10085') }}
+                {{ text_row('Other Custom HF Application', 'other_custom_hf_application', config.other_custom_hf_application, editable) }}
+                {{ textarea_row('Mobile Notes', 'mobile_notes', config.mobile_notes, editable, 'e.g. Custom mobile Mk50008') }}
+                {{ textarea_row('Card Notes', 'card_notes', config.card_notes, editable) }}
+                {{ textarea_row('Notes / Other Products', 'notes_other_products', config.notes_other_products, editable) }}
+            </tbody>
+        </table>
+    </div>
+</div>
 {% endmacro %}
 
 {% macro ble_name_row(config, editable) %}

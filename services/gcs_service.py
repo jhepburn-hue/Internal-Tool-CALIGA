@@ -3,7 +3,7 @@ import time
 import logging
 from datetime import datetime, timezone
 from services.gcs_client import get_gcs_client, write_to_forge, forge_root, GCS_BUCKET_NAME
-from services.ini_generator import generate_ini_from_config
+from services.ini_builder import generate_ini_from_config
 from services.forge_service import trigger_forge_build
 from utils.versions import normalize_fw_version
 
@@ -78,7 +78,7 @@ def get_or_create_ini_file(config, fw_version, user_email, output_dir):
             log.exception("Exception checking bucket: %s", e)
 
     log.info("'%s' not found in GCS. Generating from DB model...", file_name)
-    generate_ini_from_config(config, local_path)
+    generate_ini_from_config(config, local_path, ver_with_v)
 
     if client:
         forge_upload_path = f"{forge_root()}{ver_with_v}/{file_name}"

@@ -1,7 +1,7 @@
 """
 Fills the LEAF, wallet, and BLE name fields of configurations from their master INIs in GCS.
 
-Reads input/<version>/<config_name>.ini and works backwards from INI-Generator's rules. Only
+Reads input/<version>/<config_name>.ini and works backwards from the INI builder's rules. Only
 blank fields are filled, so values entered by hand are never overwritten. Each changed
 configuration gets a revision history entry.
 
@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from app import app  # noqa: E402
 from models import db, Configuration, RevisionHistory  # noqa: E402
 from services.gcs_client import get_gcs_client, GCS_BUCKET_NAME  # noqa: E402
-from services.ini_generator import _generator  # noqa: E402
+from services.ini_settings import load_profiles, load_settings  # noqa: E402
 
 VERSIONS = ("v5.4.10", "v5.4.11")
 REVISION_USER = "system (backfill from master INI)"
@@ -88,7 +88,7 @@ def fields_from_ini(ini, master, manufacturer_keyset):
     if meridian and bit_nb in ("32", "40", "57", "128"):
         fields["meridian_bit_count"] = int(bit_nb)
 
-    # APEX is the standard name, which INI-Generator treats as no custom name.
+    # APEX is the standard name, which the INI builder treats as no custom name.
     name = master.get(("ble/adv_data", "name_complete"), "").strip('"')
     if 0 < len(name) <= 5 and name.upper() != "APEX":
         fields["ble_advertising_name"] = name.upper()
@@ -97,9 +97,9 @@ def fields_from_ini(ini, master, manufacturer_keyset):
 
 
 def main(apply):
-    csv_parser = _generator()
-    defaults = {(s, k): v for s, kv in csv_parser.load_defaults().items() for k, v in kv.items()}
-    manufacturer_keyset = csv_parser.keyset_setting("manufacturer_keyset")
+    settings = load_settings()
+    defaults = {(s, k): v for s, kv in settings.defaults.items() for k, v in kv.items()}
+    manufacturer_keyset = load_profiles()[0]["keysets"].get("manufacturer_keyset")
     bucket = get_gcs_client().bucket(GCS_BUCKET_NAME)
 
     changed = skipped = 0

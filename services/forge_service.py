@@ -151,7 +151,7 @@ def generate_partial_ini_content(form_data):
                 current_section = sec
             ini_lines.append(f"{ini_key} = {out_val}")
 
-    # Same keys per row as INI-Generator's CSN_ROWS.
+    # Same keys per row as CSN_ROWS in services/ini_builder.py.
     csn_keys = {
         "csn_mfc": ["mifare_classic_format"],
         "csn_ev1ev2": ["mifare_desfire_format", "mifare_plus_format", "mifare_ultralight_format"],

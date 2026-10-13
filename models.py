@@ -91,7 +91,7 @@ class Configuration(db.Model):
     transport_mode = db.Column(db.Text, nullable=True)
     mobile_notes = db.Column(db.Text, nullable=True)
 
-    # Fields INI-Generator reads that the original configuration form import didn't have.
+    # Fields the INI builder reads that the original configuration form import didn't have.
     keyset_id = db.Column(db.Text, nullable=True) # e.g. "Lk50003"
     custom_keyset = db.Column(db.Text, nullable=True) # 'On' / 'Off': custom LEAF Cc keyset
     ecp_desfire = db.Column(db.Text, nullable=True) # 'On' / 'Off': Apple Wallet

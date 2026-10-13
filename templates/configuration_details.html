@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from '_ini_fields.html' import ble_name_row, leaf_wallet_card %}
+{% from '_ini_fields.html' import ble_name_row, leaf_wallet_card, notes_card %}
 
 {% block content %}
 {% set is_sales = current_user.role == 'Sales' %}
@@ -440,6 +440,7 @@
         </div>
 
         {{ leaf_wallet_card(config, is_editable) }}
+        {{ notes_card(config, is_editable) }}
     </div>
 
     {% if current_user.role in ['Sales', 'SET'] %}

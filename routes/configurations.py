@@ -19,7 +19,8 @@ EDITABLE_FIELDS = [
     'mobile_keyset', 'legacy_credentials', 'transport_mode',
     'mfc_csn', 'ev1_ev2_csn', 'iclass_csn', 'iso_15693_csn', 'iso_14443a_csn',
     'leaf_si', 'leaf_cc', 'keyset_id', 'custom_keyset',
-    'ecp_desfire', 'mifare_2go', 'ecp_tci', 'meridian_bit_count', 'ble_advertising_name'
+    'ecp_desfire', 'mifare_2go', 'ecp_tci', 'meridian_bit_count', 'ble_advertising_name',
+    'custom_application_notes', 'other_custom_hf_application', 'mobile_notes', 'card_notes', 'notes_other_products'
 ]
 
 MERIDIAN_BIT_COUNTS = (32, 40, 57, 128)

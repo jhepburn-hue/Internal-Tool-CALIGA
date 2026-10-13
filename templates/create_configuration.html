@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from '_ini_fields.html' import ble_name_row, leaf_wallet_card %}
+{% from '_ini_fields.html' import ble_name_row, leaf_wallet_card, notes_card %}
 
 {% block content %}
 <form action="{{ url_for('configurations.create_configuration') }}" method="POST">
@@ -302,6 +302,7 @@
         </div>
 
         {{ leaf_wallet_card(config, true) }}
+        {{ notes_card(config, true) }}
     </div>
 </div>
 </form>

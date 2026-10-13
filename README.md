@@ -72,12 +72,12 @@ Tests use a throwaway SQLite database and never contact Slack, Jira, Forge, GCS,
 | `tests/test_failures.py` | Claim, re-test, lazy INI, edited-INI firmware builds |
 | `tests/test_tools_and_jobs.py` | Background job tools, flash logging, YAML automator |
 | `tests/test_forge_and_csn.py` | IAP cookie handling, partial config CSN output |
-| `tests/test_ini_generation.py` | INI-Generator form rows, master INI backfill, generated INI contents |
+| `tests/test_ini_generation.py` | INI builder rules and checks, form import, master INI backfill |
 | `tests/test_users_admin.py` | Sign-in rules, the admin Users page, deactivation, sign out |
 | `tests/test_job_queue_processes.py` | Jobs queued in one process run once in separate worker processes |
 | `tests/test_osdp_flasher_js.py` | The browser flasher matches recorded OSDP reference frames byte for byte, and handles a simulated reader (needs Node.js) |
 
-One test needs INI-Generator's private files and is skipped without them:
+The INI builder tests use a cut-down settings file in `tests/fixtures/`. One more test uses the real `settings_default.ini` and is skipped without it:
 
 ```bash
 CALIGA_TEST_INI_PRIVATE_DIR=~/Desktop/INI-Generator/private .venv/bin/python -m pytest
@@ -146,13 +146,21 @@ Forge builds and PocketBase syncs can take a minute or more. These requests add 
 
 ## INI generation
 
-When a configuration has no master INI in `input/<version>/` (or in the Forge folder, `forge/jhepburn@wavelynx.com/`), CALIGA generates one from the database with [INI-Generator](https://github.com/jhepburn-hue/INI-Generator). It's installed as a package pinned to a commit in `requirements.txt`. To pick up INI-Generator changes, update that commit and reinstall.
+When a configuration has no master INI in `input/<version>/` (or in the Forge folder, `forge/jhepburn@wavelynx.com/`), CALIGA builds one from the configuration's database fields.
 
-`services/ini_generator.py` turns the configuration's fields into INI-Generator's form rows. INI-Generator applies `settings_default.ini` and the customer profiles, and lists anything it couldn't decide. Those warnings are written as comments at the top of the generated INI.
+| File | Role |
+|---|---|
+| `services/ini_settings.py` | Reads `settings_default.ini`: every setting, its default, and its allowed values. Checks values and writes the INI with only the keys that differ from the defaults. |
+| `services/ini_builder.py` | The rules that turn configuration fields into settings. They follow INI-Generator's form rules, which were tuned against the master INIs. |
+| `services/prox_filter.py` | Turns a prox filter description ("Ignore W36-8 with a facility code 15") into filter settings. |
 
-INI-Generator needs `settings_default.ini` and `customer_profiles.json`. CALIGA reads them from the local folder in `INI_GENERATOR_PRIVATE_DIR` (for example your INI-Generator clone's `private/` folder). They're never stored in GCS. Restart CALIGA after updating either file.
+Anything the rules can't settle is written as a comment at the top of the INI. Settings a firmware version doesn't accept are left out for that version (`UNSUPPORTED_SETTINGS` in `ini_builder.py`), with a warning. For example, v5.4.10 rejects `ask_output_format`, so CASI-4001 can't be set on it.
 
-The LEAF & Wallet fields (Leaf Si/Cc, Keyset ID, Custom Keyset, ECP DESFire, MiFare2Go, ECP TCI, Meridian bit count) and BLE Advertising Name feed INI-Generator directly. Blank fields leave those settings at defaults.
+CALIGA reads `settings_default.ini` and `customer_profiles.json` from the local folder in `INI_PRIVATE_DIR`. They're company data: never commit them or store them in GCS. Restart CALIGA after updating either file. CALIGA doesn't need the INI-Generator repo itself.
+
+The builder reads the notes fields too (Custom Application Notes, Mobile Notes, Card Notes, Notes / Other Products). They name customer apps (e.g. "MFC ACTPro"), extra keysets, and custom mobile keysets. Lines like `[osdp]` / `key = value` in the notes are applied last.
+
+`tools/import_form_fields.py <forms folder>` fills fields from the original configuration form CSVs. It only fills blank fields and values CALIGA's dropdowns don't offer (like the old "Enabled" in Mobile Keyset), and adds a revision history entry for each configuration it changes. Run it without `--apply` for a dry run.
 
 `tools/backfill_ini_fields.py` fills those fields from each configuration's master INI in `input/<version>/`. It only fills blank fields and adds a revision history entry for each configuration it changes. Run it without arguments for a dry run, and with `--apply` to save.
 

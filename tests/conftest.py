@@ -4,8 +4,8 @@ Shared test setup. Tests run against a throwaway SQLite database and a local job
 External services are never contacted: their credentials are blanked before the app is
 imported, and tests stub the service functions they exercise.
 
-INI generation tests need INI-Generator's private files. Set CALIGA_TEST_INI_PRIVATE_DIR to the
-folder with settings_default.ini and customer_profiles.json to run them. Otherwise they're skipped.
+One INI generation test needs the real settings_default.ini. Set CALIGA_TEST_INI_PRIVATE_DIR to the
+folder that holds it to run that test. Otherwise it's skipped.
 """
 import os
 import re
@@ -29,7 +29,7 @@ os.environ.update(
     SECRET_KEY="test-secret",
     DATABASE_URL=f"sqlite:///{TMP}/test.db",
     PB_BASE_URL="http://127.0.0.1:9",
-    INI_GENERATOR_PRIVATE_DIR=INI_PRIVATE_DIR,
+    INI_PRIVATE_DIR=INI_PRIVATE_DIR,
     LOG_LEVEL="ERROR",
 )
 
